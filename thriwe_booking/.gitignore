@@ -3,3 +3,4 @@ config.toml
 auth_state.json
 screenshots/
 booking.log
+__pycache__/
