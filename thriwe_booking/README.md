@@ -8,8 +8,8 @@
 
 ```bash
 cd thriwe_booking
-pip install -r requirements.txt
-playwright install chromium
+py -m pip install -r requirements.txt   # Windows 에서 pip 가 안 되면 py -m pip
+py -m playwright install chromium
 cp config.example.toml config.toml
 cp .env.example .env        # 로그인/카드 정보 입력 (커밋되지 않음)
 ```
@@ -19,7 +19,7 @@ cp .env.example .env        # 로그인/카드 정보 입력 (커밋되지 않�
 `config.example.toml` 의 selector 는 **추정값**입니다. 실제 사이트에서 예약 과정을 한 번 녹화해 확인하세요.
 
 ```bash
-playwright codegen https://emiratesnbdbenefits.thriwe.com/login
+py -m playwright codegen https://emiratesnbdbenefits.thriwe.com/login
 ```
 
 열린 브라우저에서 로그인 → 골프 → 코스 → 날짜 → 티타임 → 카드 입력 화면까지 진행하면
@@ -29,7 +29,7 @@ playwright codegen https://emiratesnbdbenefits.thriwe.com/login
 ## 3. 테스트
 
 ```bash
-python book.py --now --dry-run      # 자정 대기 없이 바로, 결제 버튼 직전에서 멈춤
+py book.py --now --dry-run      # 자정 대기 없이 바로, 결제 버튼 직전에서 멈춤
 ```
 
 `screenshots/` 에 단계별 화면이 저장됩니다. 실패하면 `*_error.png` 로 어느 단계인지 확인하세요.
