@@ -36,26 +36,38 @@ tee_ampm = "AM"
 [[steps]]
 action = "goto"
 url = "https://emiratesnbdbenefits.thriwe.com/login"
+wait_until = "networkidle"    # 로그인 화면이 다 그려질 때까지 대기
 
 [[steps]]
 action = "fill"
 selector = 'role=textbox[name=/Enter your registered email/i]'
 value = "{email}"
+press = "Tab"
+retry_seconds = 10
 
 [[steps]]
 action = "fill"
 selector = 'role=textbox[name=/Enter your Password/i]'
 value = "{password}"
+retry_seconds = 10
+
+# Login 직전에 이메일이 그대로 있는지 한 번 더 확인 (지워졌으면 다시 입력)
+[[steps]]
+action = "fill"
+selector = 'role=textbox[name=/Enter your registered email/i]'
+value = "{email}"
+retry_seconds = 10
 
 [[steps]]
 action = "click"
 selector = 'role=button[name="Login"]'
 
-# 로그인 후 안내 팝업 (안 뜰 수도 있으므로 optional)
+# 로그인 후 안내 팝업 (안 뜰 수도 있으므로 optional). 로그인 응답이 늦을 수 있어 넉넉히 기다림
 [[steps]]
 action = "click"
 selector = 'role=button[name="Click to proceed"]'
 optional = true
+attempt_timeout_ms = 15000
 
 [[steps]]
 action = "click"

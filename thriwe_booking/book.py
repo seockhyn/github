@@ -163,7 +163,14 @@ class Runner:
         elif action == 'reload':
             page.reload(wait_until=step.get('wait_until', 'domcontentloaded'))
         elif action == 'fill':
-            page.locator(selector).first.fill(value, timeout=timeout)
+            loc = page.locator(selector).first
+            loc.fill(value, timeout=timeout)
+            if step.get('press'):
+                loc.press(step['press'])
+            # 페이지가 다시 그려지며 입력값이 지워지는 경우가 있어 확인 후 재시도
+            page.wait_for_timeout(int(step.get('verify_after_ms', 300)))
+            if loc.input_value(timeout=timeout) != value:
+                raise PlaywrightError('입력값이 유지되지 않았습니다')
         elif action == 'type':
             page.locator(selector).first.press_sequentially(value, delay=int(step.get('delay_ms', 30)),
                                                            timeout=timeout)
