@@ -32,6 +32,11 @@ tee_hour = "08"
 tee_minute = "10"
 tee_ampm = "AM"
 
+# 언제 뜰지 모르는 안내 팝업: 클릭하려는 순간 화면을 가리고 있으면 selector 를 눌러 닫음
+[[dismiss]]
+name = "Meet AINA 안내창"
+selector = 'text=/browse manually instead/i'
+
 # ---------- 1. 로그인 (오픈 10분 전쯤) ----------
 [[steps]]
 action = "goto"

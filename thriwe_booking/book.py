@@ -249,6 +249,19 @@ class Runner:
         return True
 
 
+def add_dismiss_handlers(page, popups, variables):
+    """언제 뜰지 모르는 안내 팝업이 클릭을 가로막으면 자동으로 닫는다."""
+    def make_handler(name):
+        def handler(locator):
+            log(f'  팝업 닫기: {name}')
+            locator.first.click()
+        return handler
+
+    for popup in popups:
+        target = render(popup['selector'], variables)
+        page.add_locator_handler(page.locator(target), make_handler(popup.get('name', target)))
+
+
 def main():
     parser = argparse.ArgumentParser(description='Thriwe 골프 자동 예약')
     parser.add_argument('--config', default=str(BASE_DIR / 'config.toml'))
@@ -288,6 +301,7 @@ def main():
             viewport={'width': 1366, 'height': 900},
         )
         page = context.new_page()
+        add_dismiss_handlers(page, cfg.get('dismiss', []), variables)
         runner = Runner(page, cfg, variables, open_at, offset, args.dry_run, shot_dir)
         ok, failed = False, False
         try:
