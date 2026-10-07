@@ -26,7 +26,8 @@ from playwright.sync_api import sync_playwright
 BASE_DIR = Path(__file__).resolve().parent
 
 # 로그에 값을 그대로 찍으면 안 되는 변수
-SENSITIVE_VARS = {'password', 'card_number', 'card_expiry', 'card_cvv', 'card_name'}
+SENSITIVE_VARS = {'password', 'card_number', 'card_expiry', 'card_cvv', 'card_name',
+                  'card_middle', 'card_exp_month', 'card_exp_year'}
 ENV_VARS = {
     'email': 'THRIWE_EMAIL',
     'password': 'THRIWE_PASSWORD',
@@ -86,6 +87,12 @@ def build_vars(cfg, open_at):
     sched = cfg['schedule']
     play_date = open_at.date() + dt.timedelta(days=int(sched.get('days_ahead', 14)))
     variables = {key: os.environ.get(env, '') for key, env in ENV_VARS.items()}
+    # 결제 화면: 카드번호 앞 6자리/뒤 4자리는 미리 채워져 있어 가운데만 입력, 유효기간은 MM / YY 칸이 따로 있음
+    digits = re.sub(r'\D', '', variables['card_number'])
+    variables['card_middle'] = digits[6:-4] if len(digits) > 10 else ''
+    exp = re.findall(r'\d+', variables['card_expiry'])
+    variables['card_exp_month'] = exp[0].zfill(2) if exp else ''
+    variables['card_exp_year'] = exp[1][-2:] if len(exp) > 1 else ''
     variables['play_date'] = play_date.strftime(sched.get('date_format', '%Y-%m-%d'))
     variables['play_day'] = str(play_date.day)
     # 달력(react-datepicker)의 날짜 이름 형식: "Thursday, October 22nd, 2026"
@@ -205,8 +212,9 @@ class Runner:
             if step.get('press'):
                 loc.press(step['press'])
             # 페이지가 다시 그려지며 입력값이 지워지는 경우가 있어 확인 후 재시도
-            page.wait_for_timeout(int(step.get('verify_after_ms', 300)))
-            if loc.input_value(timeout=timeout) != value:
+            if step.get('verify', True):
+                page.wait_for_timeout(int(step.get('verify_after_ms', 300)))
+            if step.get('verify', True) and loc.input_value(timeout=timeout) != value:
                 raise PlaywrightError('입력값이 유지되지 않았습니다')
         elif action == 'type':
             page.locator(selector).first.press_sequentially(value, delay=int(step.get('delay_ms', 30)),
@@ -257,6 +265,10 @@ class Runner:
             if self.page.locator(render(step['only_if_missing'], self.vars)).count():
                 log(f'{label}  -> 이미 있음, 건너뜀')
                 return True
+        # skip_if_empty: 값이 비어 있으면 건너뜀 (예: CVV 를 .env 에 저장하지 않은 경우 직접 입력)
+        if 'skip_if_empty' in step and not render(step['skip_if_empty'], self.vars):
+            log(f'{label}  -> 값이 없어 건너뜀 (직접 입력하세요)')
+            return True
         if step.get('final') and self.dry_run:
             log(f'{label}  -> dry-run 이라 실행하지 않음')
             return False

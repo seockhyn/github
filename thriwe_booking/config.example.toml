@@ -2,7 +2,7 @@
 # copy config.example.toml config.toml 후 [vars] 를 원하는 값으로 수정하세요.
 #
 # 로그인 ~ 날짜/시간 선택(Apply)까지는 실제 사이트에서 녹화(playwright codegen)한 selector 입니다.
-# Proceed To Payment 이후 결제 화면은 아직 녹화 전이라 직접 결제합니다 (--dry-run 은 Proceed To Payment 직전에서 멈춤).
+# 결제 화면에서 카드 정보까지 자동 입력하고, --dry-run 은 Pay 버튼 직전에서 멈춥니다. 카드 OTP 는 직접 입력합니다.
 # selector 문법: https://playwright.dev/python/docs/locators
 #   role=button[name="Login"]        이름 전체 일치 (버튼은 이 형식: "Next" 가 "Next Month" 와 헷갈리지 않음)
 #   role=radio[name=/Abu dhabi/i]    이름 일부 일치 (정규식, i = 대소문자 무시)
@@ -103,7 +103,7 @@ until = 'text="Select Your Card"'
 same_page = 'role=button[name="Book Now"]'
 
 # Booking for Myself 화면: 저장된 카드가 선택돼 있고 Booking Type 은 Complimentary 가 기본값.
-# 카드 목록이 다 뜨기 전에 Next 를 누르면 무시되므로, Booking Type 이 보인 뒤 1초 더 기다림
+# 카드 목록이 다 뜨기 전에 Next 를 누르면 무시될 수 있음 -> 아래 Next 단계에서 화면이 그대로면 다시 누름
 [[steps]]
 action = "wait_for"
 selector = 'text="{booking_type}"'
@@ -112,10 +112,6 @@ selector = 'text="{booking_type}"'
 action = "click"
 selector = 'text="{booking_type}"'
 optional = true
-
-[[steps]]
-action = "sleep"
-ms = 1000
 
 # Next 는 화면마다 이름이 같아서, 카드 화면에 그대로 있을 때(same_page)만 다시 누름
 [[steps]]
@@ -203,20 +199,68 @@ same_page = 'role=textbox[name=/Select Time of play/i]'
 action = "screenshot"
 name = "booking_summary"
 
-# --dry-run 이면 여기서 멈춤 (Booking Summary 화면에서 직접 확인 후 진행)
+# 결제 화면(payments.thriwe.com)으로 이동. 이 화면에 그대로 있을 때만 다시 누름
 [[steps]]
 action = "click"
 selector = 'role=button[name="Proceed To Payment"]'
-final = true
+until = 'input[placeholder="CVV"]'
+same_page = 'role=button[name="Proceed To Payment"]'
+until_timeout_ms = 30000
+
+# ---------- 7. 카드 정보 입력 (.env 의 CARD_*) ----------
+# 카드번호 앞 6자리 / 뒤 4자리는 미리 채워져 있어 가운데 자리만 입력
+[[steps]]
+action = "fill"
+selector = 'input[placeholder^="XXX"]'
+value = "{card_middle}"
+verify = false
+skip_if_empty = "{card_middle}"
+
+[[steps]]
+action = "fill"
+selector = 'input[placeholder="MM"]'
+value = "{card_exp_month}"
+verify = false
+skip_if_empty = "{card_exp_month}"
+
+[[steps]]
+action = "fill"
+selector = 'input[placeholder="YY"]'
+value = "{card_exp_year}"
+verify = false
+skip_if_empty = "{card_exp_year}"
+
+# CARD_CVV 를 비워 두면 건너뛰고 직접 입력
+[[steps]]
+action = "fill"
+selector = 'input[placeholder="CVV"]'
+value = "{card_cvv}"
+verify = false
+skip_if_empty = "{card_cvv}"
+
+[[steps]]
+action = "fill"
+selector = 'input[placeholder="Name on card"]'
+value = "{card_name}"
+verify = false
+skip_if_empty = "{card_name}"
+optional = true
 
 [[steps]]
 action = "screenshot"
-name = "payment_page"
+name = "payment_filled"
 
-# 결제 화면(카드 CVV / OTP)은 아직 녹화 전이라 직접 결제. 완료 문구가 보이거나 30분이 지나면 종료
+# Pay 버튼. --dry-run 이면 여기서 멈춤. CVV 가 없으면 누르지 않고 직접 입력 후 누르도록 둠
+[[steps]]
+action = "click"
+selector = 'role=button[name=/^Pay/]'
+final = true
+skip_if_empty = "{card_cvv}"
+
+# 카드 OTP(3D Secure) 는 직접 입력. 완료 문구가 보이거나 30분이 지나면 종료
 [[steps]]
 action = "pause"
-message = "결제 화면에서 직접 결제를 완료하세요 (브라우저를 닫지 마세요)"
+message = "OTP 가 뜨면 직접 입력하세요 (CVV 를 저장하지 않았다면 CVV 입력 후 Pay 를 누르세요)"
 selector = 'text=/(booking|payment).*(confirmed|successful|success)/i'
 timeout_ms = 1800000
 optional = true
