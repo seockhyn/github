@@ -103,17 +103,20 @@ selector = 'role=button[name="Book Now"]'
 action = "click"
 selector = 'role=button[name="Next"]'
 
-# 라디오 버튼 위를 디자인용 라벨이 덮고 있어서, 사람처럼 골프장 이름(라벨)을 클릭
+# 골프장 이름이 적힌 부분을 클릭 (녹화한 동작과 동일)
 [[steps]]
 action = "click"
-selector = 'label:has-text("{course}")'
+selector = 'span:has-text("{course}")'
 retry_seconds = 10
+optional = true
 
-# 선택이 확실히 됐는지 확인 (이미 선택돼 있으면 그대로 통과)
+# 라디오 버튼 위를 디자인용 라벨이 덮고 있어 force 로 체크.
+# 이미 선택돼 있으면 그대로 통과하고, 선택이 안 되면 오류가 난다.
 [[steps]]
 action = "check"
 selector = 'role=radio[name=/{course}/i]'
 force = true
+retry_seconds = 10
 
 [[steps]]
 action = "click"
