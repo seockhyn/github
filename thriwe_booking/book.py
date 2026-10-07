@@ -175,11 +175,12 @@ class Runner:
             page.locator(selector).first.press_sequentially(value, delay=int(step.get('delay_ms', 30)),
                                                            timeout=timeout)
         elif action == 'click':
-            page.locator(selector).first.click(timeout=timeout)
+            page.locator(selector).first.click(timeout=timeout, force=bool(step.get('force')))
         elif action == 'select':
             page.locator(selector).first.select_option(value, timeout=timeout)
         elif action == 'check':
-            page.locator(selector).first.check(timeout=timeout)
+            # force: 디자인용 라벨이 덮고 있어도 체크 (이미 체크돼 있으면 아무것도 안 함)
+            page.locator(selector).first.check(timeout=timeout, force=bool(step.get('force')))
         elif action == 'press':
             page.keyboard.press(value)
         elif action == 'wait_for':

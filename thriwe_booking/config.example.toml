@@ -27,7 +27,7 @@ keep_open_seconds = 30        # 종료 전 결과 화면을 잠시 띄워 둠
 #   {play_date_label}  예) Thursday, October 22nd, 2026  (달력 날짜 이름, 자동 계산)
 #   아래 [vars] 값
 [vars]
-course = "Abu dhabi City club Abu Dhabi"   # 골프장 선택 라디오 버튼 이름
+course = "Abu dhabi City club"   # 골프장 목록에 보이는 이름 (일부만 써도 됨, 대소문자 무시)
 tee_hour = "08"
 tee_minute = "10"
 tee_ampm = "AM"
@@ -103,9 +103,17 @@ selector = 'role=button[name="Book Now"]'
 action = "click"
 selector = 'role=button[name="Next"]'
 
+# 라디오 버튼 위를 디자인용 라벨이 덮고 있어서, 사람처럼 골프장 이름(라벨)을 클릭
+[[steps]]
+action = "click"
+selector = 'label:has-text("{course}")'
+retry_seconds = 10
+
+# 선택이 확실히 됐는지 확인 (이미 선택돼 있으면 그대로 통과)
 [[steps]]
 action = "check"
 selector = 'role=radio[name=/{course}/i]'
+force = true
 
 [[steps]]
 action = "click"
