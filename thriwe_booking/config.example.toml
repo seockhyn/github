@@ -31,6 +31,7 @@ course = "Abu dhabi City club"   # 골프장 목록에 보이는 이름 (일부�
 tee_hour = "08"
 tee_minute = "10"
 tee_ampm = "AM"
+booking_type = "Complimentary"   # 또는 "Discounted"
 
 # 언제 뜰지 모르는 안내 팝업: 클릭하려는 순간 화면을 가리고 있으면 selector 를 눌러 닫음
 [[dismiss]]
@@ -98,10 +99,25 @@ selector = 'role=heading[name="Golf Access"]'
 [[steps]]
 action = "click"
 selector = 'role=button[name="Book Now"]'
+until = 'text="Select Your Card"'
+retry_seconds = 20
+
+# Booking for Myself 화면: 저장된 카드가 선택돼 있고 Booking Type 은 Complimentary 가 기본값.
+# 카드 목록이 다 뜨기 전에 Next 를 누르면 무시되므로, 골프장 목록이 나올 때까지 확인하며 누름
+[[steps]]
+action = "wait_for"
+selector = 'text="{booking_type}"'
+
+[[steps]]
+action = "click"
+selector = 'text="{booking_type}"'
+optional = true
 
 [[steps]]
 action = "click"
 selector = 'role=button[name="Next"]'
+until = 'role=radio[name=/{course}/i]'
+retry_seconds = 20
 
 # 골프장 이름이 적힌 부분을 클릭 (녹화한 동작과 동일)
 [[steps]]
@@ -121,6 +137,8 @@ retry_seconds = 10
 [[steps]]
 action = "click"
 selector = 'role=button[name="Next"]'
+until = ".fa.fa-calendar"
+retry_seconds = 20
 
 # ---------- 4. 날짜 선택 ----------
 [[steps]]

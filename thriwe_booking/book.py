@@ -175,7 +175,13 @@ class Runner:
             page.locator(selector).first.press_sequentially(value, delay=int(step.get('delay_ms', 30)),
                                                            timeout=timeout)
         elif action == 'click':
+            until = render(step.get('until'), self.vars)
+            # until: 클릭 후 다음 화면 요소가 나타나야 성공. 이미 나와 있으면 다시 누르지 않음
+            if until and page.locator(until).first.is_visible():
+                return
             page.locator(selector).first.click(timeout=timeout, force=bool(step.get('force')))
+            if until:
+                page.locator(until).first.wait_for(timeout=int(step.get('until_timeout_ms', 2000)))
         elif action == 'select':
             page.locator(selector).first.select_option(value, timeout=timeout)
         elif action == 'check':
