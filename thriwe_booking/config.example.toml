@@ -1,11 +1,11 @@
-# Thriwe 골프 자동 예약 설정 예시
-# cp config.example.toml config.toml 후 수정하세요.
+# Thriwe 골프 자동 예약 설정 (Emirates NBD, Golf Access)
+# copy config.example.toml config.toml 후 [vars] 를 원하는 값으로 수정하세요.
 #
-# !!! 아래 steps 의 selector 는 예시(추정값)입니다 !!!
-# 실제 화면 요소는 PC 에서 다음 명령으로 예약 과정을 한 번 녹화해 확인한 뒤 바꿔 넣으세요.
-#   playwright codegen https://emiratesnbdbenefits.thriwe.com/login
+# 로그인 ~ 날짜/시간 선택(Apply)까지는 실제 사이트에서 녹화(playwright codegen)한 selector 입니다.
+# Apply 이후(확인/카드 입력/결제) 화면은 아직 녹화 전이라, 지금은 Apply 다음 단계에서 멈추도록 해 두었습니다.
 # selector 문법: https://playwright.dev/python/docs/locators
-#   text=Book Now  /  button:has-text("Next")  /  #email  /  input[name="cardNumber"]
+#   role=button[name="Login"]        이름 전체 일치 (버튼은 이 형식: "Next" 가 "Next Month" 와 헷갈리지 않음)
+#   role=radio[name=/Abu dhabi/i]    이름 일부 일치 (정규식, i = 대소문자 무시)
 
 [site]
 base_url = "https://emiratesnbdbenefits.thriwe.com"
@@ -14,130 +14,136 @@ base_url = "https://emiratesnbdbenefits.thriwe.com"
 timezone = "Asia/Dubai"       # 아부다비 시간 (UTC+4)
 open_time = "00:00:00"        # 예약 오픈 시각
 days_ahead = 14               # 오픈 날짜 기준 며칠 뒤를 예약할지
-date_format = "%d-%m-%Y"      # 날짜 입력칸 형식에 맞게 수정 ({play_date})
 
 [browser]
 headless = false              # 3D Secure 인증 등을 직접 볼 수 있도록 화면 표시 권장
 channel = ""                  # 설치된 Chrome 을 쓰려면 "chrome"
 timeout_ms = 15000
-reuse_login = false           # true 면 auth_state.json 의 로그인 세션 재사용
+reuse_login = false
 keep_open_seconds = 30        # 종료 전 결과 화면을 잠시 띄워 둠
 
-# steps 의 value/selector 에서 쓸 수 있는 변수:
+# steps 에서 쓸 수 있는 변수:
 #   {email} {password} {card_number} {card_expiry} {card_cvv} {card_name}  (.env)
-#   {play_date} {play_day}                                               (자동 계산)
-#   아래 [vars] 에 정의한 값
+#   {play_date_label}  예) Thursday, October 22nd, 2026  (달력 날짜 이름, 자동 계산)
+#   아래 [vars] 값
 [vars]
-course = "Abu Dhabi Golf Club"
-players = "1"
+course = "Abu dhabi City club Abu Dhabi"   # 골프장 선택 라디오 버튼 이름
+tee_hour = "08"
+tee_minute = "10"
+tee_ampm = "AM"
 
-# ---------- 1. 로그인 (오픈 몇 분 전에 미리) ----------
+# ---------- 1. 로그인 (오픈 10분 전쯤) ----------
 [[steps]]
 action = "goto"
 url = "https://emiratesnbdbenefits.thriwe.com/login"
 
 [[steps]]
 action = "fill"
-selector = "input[type='email'], input[name='email']"
+selector = 'role=textbox[name=/Enter your registered email/i]'
 value = "{email}"
 
 [[steps]]
 action = "fill"
-selector = "input[type='password']"
+selector = 'role=textbox[name=/Enter your Password/i]'
 value = "{password}"
 
 [[steps]]
 action = "click"
-selector = "button:has-text('Login'), button:has-text('Sign in')"
+selector = 'role=button[name="Login"]'
+
+# 로그인 후 안내 팝업 (안 뜰 수도 있으므로 optional)
+[[steps]]
+action = "click"
+selector = 'role=button[name="Click to proceed"]'
+optional = true
+
+[[steps]]
+action = "click"
+selector = 'role=button[name="Close"]'
+optional = true
 
 [[steps]]
 action = "wait_for"
-selector = "text=Golf"
+selector = 'role=heading[name="Golf Access"]'
 
-# ---------- 2. 골프 예약 화면으로 이동해 코스 선택 ----------
-[[steps]]
-action = "click"
-selector = "text=Golf"
-
-[[steps]]
-action = "click"
-selector = "text={course}"
-
-# ---------- 3. 자정까지 대기 ----------
+# ---------- 2. 아부다비 자정까지 대기 ----------
+# 달력의 선택 가능 날짜가 페이지를 연 시점에 정해질 수 있으므로,
+# 자정이 지난 뒤에 예약 화면에 들어가도록 여기서 기다린다.
 [[steps]]
 action = "wait_until_open"
-early_seconds = 0.3           # 네트워크 지연을 고려해 살짝 일찍 시작
+early_seconds = 0
 
-# 자정 직후 달력이 갱신되지 않을 수 있으므로 새로고침
+# ---------- 3. 골프장 선택 ----------
 [[steps]]
-action = "reload"
-
-# ---------- 4. 날짜 / 티타임 선택 (열릴 때까지 재시도) ----------
-[[steps]]
-action = "fill"
-selector = "input[placeholder*='Date']"
-value = "{play_date}"
-retry_seconds = 20
-reload_on_retry = false
+action = "click"
+selector = 'role=heading[name="Golf Access"]'
 
 [[steps]]
-action = "click_first_available"
-selectors = [               # 선호하는 티타임 순서대로
-  "text=07:00",
-  "text=07:30",
-  "text=08:00",
-]
-retry_seconds = 20
+action = "click"
+selector = 'role=button[name="Book Now"]'
+
+[[steps]]
+action = "click"
+selector = 'role=button[name="Next"]'
+
+[[steps]]
+action = "check"
+selector = 'role=radio[name=/{course}/i]'
+
+[[steps]]
+action = "click"
+selector = 'role=button[name="Next"]'
+
+# ---------- 4. 날짜 선택 ----------
+[[steps]]
+action = "click"
+selector = ".fa.fa-calendar"
+
+# 예약 날짜가 다음 달이면 달력을 넘김 (막혀 있든 열려 있든 그 날짜가 보이면 건너뜀)
+[[steps]]
+action = "click"
+selector = 'role=button[name="Next Month"]'
+only_if_missing = 'role=option[name=/{play_date_label}/]'
+optional = true
+
+# 열린 날짜만 이름이 "Choose ..." 로 시작하므로, 열릴 때까지 재시도
+[[steps]]
+action = "click"
+selector = 'role=option[name=/^Choose {play_date_label}/]'
+retry_seconds = 30
+
+# ---------- 5. 시간 선택 ----------
+[[steps]]
+action = "click"
+selector = 'role=textbox[name=/Select Time of play/i]'
 
 [[steps]]
 action = "select"
-selector = "select[name='players']"
-value = "{players}"
-optional = true
+selector = "#pickup_hours"
+value = "{tee_hour}"
+
+[[steps]]
+action = "select"
+selector = "#pickup_minutes"
+value = "{tee_minute}"
+
+[[steps]]
+action = "select"
+selector = "#pickup_format"
+value = "{tee_ampm}"
 
 [[steps]]
 action = "click"
-selector = "button:has-text('Proceed'), button:has-text('Next')"
-
-# ---------- 5. 카드 정보 입력 ----------
-[[steps]]
-action = "fill"
-selector = "input[name='cardNumber']"
-value = "{card_number}"
-
-[[steps]]
-action = "fill"
-selector = "input[name='expiry']"
-value = "{card_expiry}"
-
-[[steps]]
-action = "fill"
-selector = "input[name='cvv']"
-value = "{card_cvv}"
-
-[[steps]]
-action = "fill"
-selector = "input[name='cardHolderName']"
-value = "{card_name}"
-optional = true
+selector = 'role=button[name="Apply"]'
 
 [[steps]]
 action = "screenshot"
-name = "before_pay"
+name = "date_time_selected"
 
-# final = true: --dry-run 이면 여기서 멈춤
+# ---------- 6. 이후 단계 (아직 녹화 전) ----------
+# Apply 다음 화면(확인/카드 입력/결제)을 녹화하면 아래를 실제 selector 로 교체합니다.
+# 그 전까지는 이 단계에서 --dry-run 이 멈추도록 final = true 로 둡니다.
 [[steps]]
 action = "click"
-selector = "button:has-text('Pay'), button:has-text('Confirm')"
+selector = 'role=button[name="Next"]'
 final = true
-
-# 3D Secure(OTP) 화면이 뜨면 직접 입력. 완료 화면 문구가 보일 때까지 최대 5분 대기
-[[steps]]
-action = "pause"
-message = "카드 OTP 가 뜨면 직접 입력하세요"
-selector = "text=/booking (confirmed|successful|request)/i"
-timeout_ms = 300000
-
-[[steps]]
-action = "screenshot"
-name = "done"

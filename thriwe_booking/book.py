@@ -87,8 +87,16 @@ def build_vars(cfg, open_at):
     variables = {key: os.environ.get(env, '') for key, env in ENV_VARS.items()}
     variables['play_date'] = play_date.strftime(sched.get('date_format', '%Y-%m-%d'))
     variables['play_day'] = str(play_date.day)
+    # 달력(react-datepicker)의 날짜 이름 형식: "Thursday, October 22nd, 2026"
+    variables['play_date_label'] = (f'{play_date:%A}, {play_date:%B} {ordinal(play_date.day)}, '
+                                    f'{play_date.year}')
     variables.update({k: str(v) for k, v in cfg.get('vars', {}).items()})
     return variables
+
+
+def ordinal(n):
+    suffix = 'th' if 11 <= n % 100 <= 13 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')
+    return f'{n}{suffix}'
 
 
 def render(value, variables):
@@ -162,7 +170,9 @@ class Runner:
         elif action == 'click':
             page.locator(selector).first.click(timeout=timeout)
         elif action == 'select':
-            page.locator(selector).first.select_option(label=value, timeout=timeout)
+            page.locator(selector).first.select_option(value, timeout=timeout)
+        elif action == 'check':
+            page.locator(selector).first.check(timeout=timeout)
         elif action == 'press':
             page.keyboard.press(value)
         elif action == 'wait_for':
@@ -194,6 +204,11 @@ class Runner:
 
     def run_step(self, idx, step):
         label = f'[{idx}] {describe(step, self.vars)}'
+        # only_if_missing: 해당 요소가 이미 화면에 있으면 이 단계는 건너뜀 (예: 다음 달 버튼)
+        if step.get('only_if_missing'):
+            if self.page.locator(render(step['only_if_missing'], self.vars)).count():
+                log(f'{label}  -> 이미 있음, 건너뜀')
+                return True
         if step.get('final') and self.dry_run:
             log(f'{label}  -> dry-run 이라 실행하지 않음')
             return False
