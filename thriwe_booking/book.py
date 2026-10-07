@@ -151,6 +151,24 @@ class Runner:
                 time.sleep(min(remaining, 0.05))
         log('오픈 시각 도달')
 
+    def wait_next_page(self, step, target):
+        """클릭 후 until 요소가 보일 때까지 기다린다.
+        same_page 요소가 아직 보이면(클릭이 무시돼 화면이 그대로면) 다시 클릭한다.
+        화면이 이미 바뀌는 중이면 다시 누르지 않는다 (Next 는 화면마다 이름이 같아 화면을 건너뛸 수 있음)."""
+        until = self.page.locator(render(step['until'], self.vars)).first
+        same_page = render(step.get('same_page'), self.vars)
+        deadline = time.time() + int(step.get('until_timeout_ms', 15000)) / 1000
+        while True:
+            try:
+                until.wait_for(timeout=2000)
+                return
+            except PlaywrightError:
+                if time.time() > deadline:
+                    raise
+                if same_page and self.page.locator(same_page).first.is_visible() and target.is_visible():
+                    log('  화면이 넘어가지 않아 다시 클릭')
+                    target.click(timeout=self.timeout_ms)
+
     def do(self, step, timeout_ms=None):
         action = step['action']
         timeout = timeout_ms or self.timeout_ms
@@ -175,13 +193,10 @@ class Runner:
             page.locator(selector).first.press_sequentially(value, delay=int(step.get('delay_ms', 30)),
                                                            timeout=timeout)
         elif action == 'click':
-            until = render(step.get('until'), self.vars)
-            # until: 클릭 후 다음 화면 요소가 나타나야 성공. 이미 나와 있으면 다시 누르지 않음
-            if until and page.locator(until).first.is_visible():
-                return
-            page.locator(selector).first.click(timeout=timeout, force=bool(step.get('force')))
-            if until:
-                page.locator(until).first.wait_for(timeout=int(step.get('until_timeout_ms', 2000)))
+            target = page.locator(selector).first
+            target.click(timeout=timeout, force=bool(step.get('force')))
+            if step.get('until'):
+                self.wait_next_page(step, target)
         elif action == 'select':
             page.locator(selector).first.select_option(value, timeout=timeout)
         elif action == 'check':
