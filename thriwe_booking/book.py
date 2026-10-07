@@ -12,6 +12,7 @@ import argparse
 import datetime as dt
 import email.utils
 import os
+import re
 import sys
 import time
 import tomllib
@@ -92,6 +93,24 @@ def build_vars(cfg, open_at):
                                     f'{play_date.year}')
     variables.update({k: str(v) for k, v in cfg.get('vars', {}).items()})
     return variables
+
+
+def parse_tee(text):
+    """'07:30', '14:10', '8:10AM' -> tee_hour/tee_minute/tee_ampm (12시간제, 두 자리)"""
+    m = re.fullmatch(r'\s*(\d{1,2}):(\d{2})\s*([AaPp][Mm])?\s*', text)
+    if not m:
+        sys.exit(f'--tee 형식이 잘못됐습니다: {text} (예: 07:30, 14:10, 8:10AM)')
+    hour, minute, ampm = int(m.group(1)), m.group(2), m.group(3)
+    if ampm:
+        ampm = ampm.upper()
+    else:
+        if hour > 23:
+            sys.exit(f'--tee 시간이 잘못됐습니다: {text}')
+        ampm = 'PM' if hour >= 12 else 'AM'
+        hour = hour % 12 or 12
+    if not 1 <= hour <= 12:
+        sys.exit(f'--tee 시간이 잘못됐습니다: {text}')
+    return {'tee_hour': f'{hour:02d}', 'tee_minute': minute, 'tee_ampm': ampm}
 
 
 def ordinal(n):
@@ -291,6 +310,8 @@ def main():
     parser.add_argument('--dry-run', action='store_true', help='final=true 단계(결제 확정)는 실행하지 않음')
     parser.add_argument('--now', action='store_true', help='오픈 시각을 기다리지 않고 바로 진행(테스트용)')
     parser.add_argument('--headless', action='store_true')
+    parser.add_argument('--tee', help='티타임 지정. 예) 07:30, 14:10, 8:10AM (config 의 tee_* 값 대신 사용)')
+    parser.add_argument('--days-ahead', type=int, help='오픈 날짜 기준 며칠 뒤를 예약할지 (config 값 대신 사용)')
     args = parser.parse_args()
 
     load_dotenv(Path(args.env))
@@ -300,6 +321,10 @@ def main():
     sched = cfg['schedule']
     tz = ZoneInfo(sched.get('timezone', 'Asia/Dubai'))
     open_at = dt.datetime.now(tz) if args.now else next_open_time(sched)
+    if args.days_ahead is not None:
+        sched['days_ahead'] = args.days_ahead
+    if args.tee:
+        cfg.setdefault('vars', {}).update(parse_tee(args.tee))
     variables = build_vars(cfg, open_at)
 
     missing = [ENV_VARS[k] for k in ('email', 'password') if not variables[k]]
@@ -307,7 +332,8 @@ def main():
         sys.exit(f'환경변수가 없습니다: {", ".join(missing)} (.env 파일 확인)')
 
     offset = 0.0 if args.now else server_clock_offset(cfg['site']['base_url'])
-    log(f'오픈 시각 {open_at.isoformat()} / 예약 날짜 {variables["play_date"]} / dry-run={args.dry_run}')
+    tee = f'{variables.get("tee_hour", "?")}:{variables.get("tee_minute", "?")} {variables.get("tee_ampm", "")}'
+    log(f'오픈 시각 {open_at.isoformat()} / 예약 날짜 {variables["play_date"]} / 티타임 {tee} / dry-run={args.dry_run}')
 
     shot_dir = BASE_DIR / 'screenshots'
     shot_dir.mkdir(exist_ok=True)

@@ -13,7 +13,7 @@ base_url = "https://emiratesnbdbenefits.thriwe.com"
 [schedule]
 timezone = "Asia/Dubai"       # 아부다비 시간 (UTC+4)
 open_time = "00:00:00"        # 예약 오픈 시각
-days_ahead = 14               # 오픈 날짜 기준 며칠 뒤를 예약할지
+days_ahead = 15               # 오픈 날짜 기준 며칠 뒤를 예약할지 (Thriwe: 수요일 자정 이후 -> 다음 주 금요일 = +15일)
 
 [browser]
 headless = false              # 3D Secure 인증 등을 직접 볼 수 있도록 화면 표시 권장
