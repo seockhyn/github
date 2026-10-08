@@ -43,6 +43,10 @@ ENV_VARS = {
 }
 
 
+class NoRetryError(RuntimeError):
+    """다시 시도해도 소용없거나 위험한 오류 (예: 이미 진행 중인 예약)"""
+
+
 def log(msg):
     print(f'[{dt.datetime.now().strftime("%H:%M:%S.%f")[:-3]}] {msg}', flush=True)
 
@@ -158,6 +162,8 @@ class Runner:
         self.dry_run = dry_run
         self.shot_dir = shot_dir
         self.timeout_ms = int(cfg.get('browser', {}).get('timeout_ms', 15000))
+        # commit=true 단계(결제 진행)를 지나면 처음부터 다시 시도하지 않음 (중복 결제 방지)
+        self.committed = False
 
     def screenshot(self, name):
         path = self.shot_dir / f'{dt.datetime.now():%Y%m%d_%H%M%S}_{name}.png'
@@ -202,7 +208,7 @@ class Runner:
             except PlaywrightError:
                 # fail_if: 사이트 오류 문구가 보이면 다시 누르지 않고 바로 중단
                 if fail_if and self.page.locator(fail_if).first.is_visible():
-                    raise RuntimeError(f'사이트 오류: {self.page.locator(fail_if).first.inner_text().strip()}')
+                    raise NoRetryError(f'사이트 오류: {self.page.locator(fail_if).first.inner_text().strip()}')
                 if time.time() > deadline:
                     raise
                 # 버튼이 비활성화(처리 중)거나 로딩 화면이 가리고 있으면 다시 누르지 않고 계속 기다림
@@ -322,6 +328,8 @@ class Runner:
         if step.get('optional') and not retry_seconds:
             attempt_timeout = int(step.get('attempt_timeout_ms', 3000))
         log(label)
+        if step.get('commit') or step.get('final'):
+            self.committed = True  # 누르는 순간부터는 결과와 상관없이 다시 시도하지 않음
         while True:
             try:
                 self.do(step, attempt_timeout)
@@ -381,6 +389,7 @@ def main():
     parser.add_argument('--tee', help='티타임 지정. 예) 07:30, 14:10, 8:10AM (config 의 tee_* 값 대신 사용)')
     parser.add_argument('--days-ahead', type=int, help='오픈 날짜 기준 며칠 뒤를 예약할지 (config 값 대신 사용)')
     parser.add_argument('--course', help='골프장 이름 일부. 예) "Sharjah Golf & Shooting Club" (config 의 course 대신 사용)')
+    parser.add_argument('--retries', type=int, help='실패 시 로그인부터 다시 시도할 횟수 (결제 진행 전 실패만, 기본 2)')
     parser.add_argument('--region', help='골프장 화면에서 먼저 고를 지역 라디오. 예) Sharjah (기본 지역이면 생략)')
     args = parser.parse_args()
 
@@ -417,28 +426,42 @@ def main():
     state_file = BASE_DIR / 'auth_state.json'
     browser_cfg = cfg.get('browser', {})
 
+    retries = args.retries if args.retries is not None else int(browser_cfg.get('retries', 2))
+
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=args.headless or browser_cfg.get('headless', False),
                                     channel=browser_cfg.get('channel') or None)
-        context = browser.new_context(
-            storage_state=str(state_file) if state_file.exists() and browser_cfg.get('reuse_login') else None,
-            timezone_id=sched.get('timezone', 'Asia/Dubai'),
-            viewport={'width': 1366, 'height': 900},
-        )
-        page = context.new_page()
-        add_dismiss_handlers(page, cfg.get('dismiss', []), variables)
-        runner = Runner(page, cfg, variables, open_at, offset, args.dry_run, shot_dir)
-        ok, failed = False, False
-        try:
-            ok = runner.run(cfg['steps'])
-            context.storage_state(path=str(state_file))
-            log('완료' if ok else 'dry-run 종료 (결제 확정 직전에서 멈춤)')
-        except Exception as e:  # noqa: BLE001 - 실패 원인을 스크린샷으로 남긴다
-            failed = True
-            log(f'실패: {e}')
-            runner.screenshot('error')
-            runner.dry_run_cleanup()
-        finally:
+        for attempt in range(retries + 1):
+            if attempt:
+                log(f'===== 처음부터 다시 시도 ({attempt}/{retries}) =====')
+            # 시도마다 새 브라우저 세션 (세션 만료/화면 꼬임 등에서 깨끗하게 다시 시작)
+            context = browser.new_context(
+                storage_state=str(state_file) if state_file.exists() and browser_cfg.get('reuse_login') else None,
+                timezone_id=sched.get('timezone', 'Asia/Dubai'),
+                viewport={'width': 1366, 'height': 900},
+            )
+            page = context.new_page()
+            add_dismiss_handlers(page, cfg.get('dismiss', []), variables)
+            runner = Runner(page, cfg, variables, open_at, offset, args.dry_run, shot_dir)
+            ok, failed, retry = False, False, False
+            try:
+                ok = runner.run(cfg['steps'])
+                context.storage_state(path=str(state_file))
+                log('완료' if ok else 'dry-run 종료 (결제 확정 직전에서 멈춤)')
+            except Exception as e:  # noqa: BLE001 - 실패 원인을 스크린샷으로 남긴다
+                failed = True
+                log(f'실패: {e}')
+                runner.screenshot('error')
+                runner.dry_run_cleanup()
+                retry = (attempt < retries and not runner.committed and not isinstance(e, NoRetryError))
+                if not retry and runner.committed:
+                    log('결제 단계 이후의 실패라 다시 시도하지 않습니다 (예약/결제 상태를 직접 확인하세요)')
+            if retry:
+                try:
+                    context.close()
+                except PlaywrightError:
+                    pass
+                continue
             runner.screenshot('final')
             try:
                 if browser_cfg.get('keep_open_seconds'):
@@ -446,6 +469,7 @@ def main():
                 browser.close()
             except PlaywrightError:
                 pass  # 열어 둔 브라우저를 사용자가 먼저 닫은 경우
+            break
     sys.exit(1 if failed else 0)
 
 

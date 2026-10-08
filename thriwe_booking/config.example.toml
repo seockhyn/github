@@ -20,6 +20,7 @@ headless = false              # 3D Secure 인증 등을 직접 볼 수 있도록
 channel = ""                  # 설치된 Chrome 을 쓰려면 "chrome"
 timeout_ms = 15000
 reuse_login = false
+retries = 2                   # 결제 진행 전에 실패하면 로그인부터 다시 시도할 횟수 (세션 만료 등 대비)
 keep_open_seconds = 600       # 종료/실패 후에도 브라우저를 10분 열어 둠 (직접 이어서 진행 가능)
 
 # steps 에서 쓸 수 있는 변수:
@@ -272,6 +273,7 @@ action = "click"
 selector = 'role=button[name="Proceed To Payment"]'
 until = 'input[placeholder="CVV"]'
 until_timeout_ms = 30000
+commit = true                 # 여기부터는 실패해도 처음부터 다시 시도하지 않음 (중복 결제 방지)
 fail_if = 'text=/booking in progress|retry after/i'
 
 # ---------- 7. 카드 정보 입력 (.env 의 CARD_*) ----------
