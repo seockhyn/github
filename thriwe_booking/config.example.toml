@@ -252,36 +252,36 @@ same_page = 'role=textbox[name=/Select Time of play/i]'
 action = "screenshot"
 name = "booking_summary"
 
-# 결제 화면(payments.thriwe.com)으로 이동. 이 화면에 그대로 있을 때만 다시 누름.
+# 결제 화면(payments.thriwe.com)으로 이동. 결제 요청이 두 번 가지 않도록 다시 누르지 않고 최대 30초 대기.
 # "User already has a booking in progress" 가 뜨면 바로 중단:
 #   직전 실행이 결제 화면에서 Cancel 없이 끝난 경우로, 10분 뒤에 다시 실행해야 함
 [[steps]]
 action = "click"
 selector = 'role=button[name="Proceed To Payment"]'
 until = 'input[placeholder="CVV"]'
-same_page = 'role=button[name="Proceed To Payment"]'
 until_timeout_ms = 30000
 fail_if = 'text=/booking in progress|retry after/i'
 
 # ---------- 7. 카드 정보 입력 (.env 의 CARD_*) ----------
-# 카드번호 앞 6자리 / 뒤 4자리는 미리 채워져 있어 가운데 자리만 입력
+# 카드번호는 cardQuarter1~ 칸으로 나뉘어 있고, 앞 6자리 / 뒤 4자리 칸은 입력 불가(disabled).
+# 입력 가능한 칸(가운데 자리)만 골라 입력
 [[steps]]
 action = "fill"
-selector = 'input[placeholder^="XXX"]'
+selector = 'input[name^="cardQuarter"]:enabled'
 value = "{card_middle}"
 verify = false
 skip_if_empty = "{card_middle}"
 
 [[steps]]
 action = "fill"
-selector = 'input[placeholder="MM"]'
+selector = 'input[placeholder="MM"]:enabled'
 value = "{card_exp_month}"
 verify = false
 skip_if_empty = "{card_exp_month}"
 
 [[steps]]
 action = "fill"
-selector = 'input[placeholder="YY"]'
+selector = 'input[placeholder="YY"]:enabled'
 value = "{card_exp_year}"
 verify = false
 skip_if_empty = "{card_exp_year}"
@@ -289,14 +289,14 @@ skip_if_empty = "{card_exp_year}"
 # CARD_CVV 를 비워 두면 건너뛰고 직접 입력 (아래 pause 단계에서 기다림)
 [[steps]]
 action = "fill"
-selector = 'input[placeholder="CVV"]'
+selector = 'input[placeholder="CVV"]:enabled'
 value = "{card_cvv}"
 verify = false
 skip_if_empty = "{card_cvv}"
 
 [[steps]]
 action = "fill"
-selector = 'input[placeholder="Name on card"]'
+selector = 'input[placeholder="Name on card"]:enabled'
 value = "{card_name}"
 verify = false
 skip_if_empty = "{card_name}"

@@ -329,11 +329,19 @@ class Runner:
     def run(self, steps):
         for idx, step in enumerate(steps, 1):
             if self.run_step(idx, step) is False:
-                # dry-run 으로 멈춘 뒤 정리 (예: 결제 취소 -> 'booking in progress' 로 10분 막히는 것 방지)
-                for c_idx, cleanup in enumerate(self.cfg.get('dry_run_cleanup', []), 1):
-                    self.run_step(f'정리 {c_idx}', cleanup)
+                self.dry_run_cleanup()
                 return False
         return True
+
+    def dry_run_cleanup(self):
+        """dry-run 으로 멈추거나 실패한 뒤 정리 (예: 결제 취소 -> 'booking in progress' 로 10분 막히는 것 방지)"""
+        if not self.dry_run:
+            return
+        for idx, cleanup in enumerate(self.cfg.get('dry_run_cleanup', []), 1):
+            try:
+                self.run_step(f'정리 {idx}', cleanup)
+            except Exception as e:  # noqa: BLE001 - 정리 실패는 원래 결과에 영향 주지 않음
+                log(f'  정리 실패: {e}')
 
 
 def add_dismiss_handlers(page, popups, variables):
@@ -415,6 +423,7 @@ def main():
             failed = True
             log(f'실패: {e}')
             runner.screenshot('error')
+            runner.dry_run_cleanup()
         finally:
             runner.screenshot('final')
             if browser_cfg.get('keep_open_seconds'):
