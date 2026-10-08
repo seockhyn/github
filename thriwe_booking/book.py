@@ -25,6 +25,11 @@ from playwright.sync_api import sync_playwright
 
 BASE_DIR = Path(__file__).resolve().parent
 
+# 작업 스케줄러 등으로 출력을 파일로 보내면 Windows 기본 인코딩(cp1252 등)에서 한글 로그가 깨지며 중단됨 -> UTF-8 고정
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, 'reconfigure'):
+        _stream.reconfigure(encoding='utf-8', errors='replace')
+
 # 로그에 값을 그대로 찍으면 안 되는 변수
 SENSITIVE_VARS = {'password', 'card_number', 'card_expiry', 'card_cvv', 'card_name',
                   'card_middle', 'card_exp_month', 'card_exp_year'}
