@@ -81,6 +81,19 @@ action = "click"
 selector = 'role=button[name="Close"]'
 optional = true
 
+# 로그인 후 메인 화면(Golf Access)이 늦게 뜨거나 넘어가지 않을 때가 있음:
+# 20초 기다려도 없으면 대시보드 주소로 직접 이동 (녹화에서 사람이 한 동작과 동일)
+[[steps]]
+action = "wait_for"
+selector = 'role=heading[name="Golf Access"]'
+optional = true
+attempt_timeout_ms = 20000
+
+[[steps]]
+action = "goto"
+url = "https://emiratesnbdbenefits.thriwe.com/dashboard"
+only_if_missing = 'role=heading[name="Golf Access"] >> visible=true'
+
 [[steps]]
 action = "wait_for"
 selector = 'role=heading[name="Golf Access"]'
