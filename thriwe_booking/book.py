@@ -196,9 +196,18 @@ class Runner:
             except PlaywrightError:
                 if time.time() > deadline:
                     raise
-                if same_page and self.page.locator(same_page).first.is_visible() and target.is_visible():
+                # 버튼이 비활성화(처리 중)거나 로딩 화면이 가리고 있으면 다시 누르지 않고 계속 기다림
+                try:
+                    stuck = (same_page and self.page.locator(same_page).first.is_visible()
+                             and target.is_visible() and target.is_enabled())
+                except PlaywrightError:
+                    stuck = False  # 페이지 이동 중
+                if stuck:
                     log('  화면이 넘어가지 않아 다시 클릭')
-                    target.click(timeout=self.timeout_ms)
+                    try:
+                        target.click(timeout=2000)
+                    except PlaywrightError:
+                        pass
 
     def do(self, step, timeout_ms=None):
         action = step['action']
