@@ -389,6 +389,8 @@ def main():
     parser.add_argument('--tee', help='티타임 지정. 예) 07:30, 14:10, 8:10AM (config 의 tee_* 값 대신 사용)')
     parser.add_argument('--days-ahead', type=int, help='오픈 날짜 기준 며칠 뒤를 예약할지 (config 값 대신 사용)')
     parser.add_argument('--course', help='골프장 이름 일부. 예) "Sharjah Golf & Shooting Club" (config 의 course 대신 사용)')
+    parser.add_argument('--start-at', help='이 시각(아부다비)까지 기다렸다가 브라우저를 열고 시작. 예) 23:55 '
+                                           '(작업 스케줄러 없이 자기 전에 미리 실행해 둘 때)')
     parser.add_argument('--open-at', help='오픈 시각을 임의로 지정해 대기까지 테스트. 예) 13:30 (아부다비 시간)')
     parser.add_argument('--retries', type=int, help='실패 시 로그인부터 다시 시도할 횟수 (결제 진행 전 실패만, 기본 2)')
     parser.add_argument('--region', help='골프장 화면에서 먼저 고를 지역 라디오. 예) Sharjah (기본 지역이면 생략)')
@@ -426,6 +428,21 @@ def main():
     region = f'{variables["region"]} / ' if variables.get('region') else ''
     log(f'오픈 시각 {open_at.isoformat()} / {region}골프장 {variables.get("course", "?")} / 예약 날짜 {variables["play_date"]} '
         f'/ 티타임 {tee} / dry-run={args.dry_run}')
+
+    if args.start_at:
+        if not re.fullmatch(r'\d{1,2}:\d{2}', args.start_at):
+            sys.exit(f'--start-at 형식이 잘못됐습니다: {args.start_at} (예: 23:55)')
+        hh, mm = (int(x) for x in args.start_at.split(':'))
+        now = dt.datetime.now(tz)
+        start = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
+        if start < now - dt.timedelta(minutes=1):
+            start += dt.timedelta(days=1)
+        if start > open_at:
+            sys.exit(f'--start-at({start:%H:%M})이 오픈 시각({open_at:%m-%d %H:%M})보다 늦습니다')
+        log(f'{start:%m-%d %H:%M} 까지 기다렸다가 시작합니다 (이 창을 닫지 마세요)')
+        while (remaining := start.timestamp() - time.time()) > 0:
+            time.sleep(min(remaining, 30))
+        log('시작')
 
     shot_dir = BASE_DIR / 'screenshots'
     shot_dir.mkdir(exist_ok=True)
