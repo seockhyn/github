@@ -433,9 +433,12 @@ def main():
             runner.dry_run_cleanup()
         finally:
             runner.screenshot('final')
-            if browser_cfg.get('keep_open_seconds'):
-                page.wait_for_timeout(int(browser_cfg['keep_open_seconds']) * 1000)
-            browser.close()
+            try:
+                if browser_cfg.get('keep_open_seconds'):
+                    page.wait_for_timeout(int(browser_cfg['keep_open_seconds']) * 1000)
+                browser.close()
+            except PlaywrightError:
+                pass  # 열어 둔 브라우저를 사용자가 먼저 닫은 경우
     sys.exit(1 if failed else 0)
 
 
