@@ -324,6 +324,7 @@ def main():
     parser.add_argument('--headless', action='store_true')
     parser.add_argument('--tee', help='티타임 지정. 예) 07:30, 14:10, 8:10AM (config 의 tee_* 값 대신 사용)')
     parser.add_argument('--days-ahead', type=int, help='오픈 날짜 기준 며칠 뒤를 예약할지 (config 값 대신 사용)')
+    parser.add_argument('--course', help='골프장 이름 일부. 예) Sharjah (config 의 course 대신 사용)')
     args = parser.parse_args()
 
     load_dotenv(Path(args.env))
@@ -337,6 +338,8 @@ def main():
         sched['days_ahead'] = args.days_ahead
     if args.tee:
         cfg.setdefault('vars', {}).update(parse_tee(args.tee))
+    if args.course:
+        cfg.setdefault('vars', {})['course'] = args.course
     variables = build_vars(cfg, open_at)
 
     missing = [ENV_VARS[k] for k in ('email', 'password') if not variables[k]]
@@ -345,7 +348,8 @@ def main():
 
     offset = 0.0 if args.now else server_clock_offset(cfg['site']['base_url'])
     tee = f'{variables.get("tee_hour", "?")}:{variables.get("tee_minute", "?")} {variables.get("tee_ampm", "")}'
-    log(f'오픈 시각 {open_at.isoformat()} / 예약 날짜 {variables["play_date"]} / 티타임 {tee} / dry-run={args.dry_run}')
+    log(f'오픈 시각 {open_at.isoformat()} / 골프장 {variables.get("course", "?")} / 예약 날짜 {variables["play_date"]} '
+        f'/ 티타임 {tee} / dry-run={args.dry_run}')
 
     shot_dir = BASE_DIR / 'screenshots'
     shot_dir.mkdir(exist_ok=True)
