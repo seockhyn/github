@@ -309,7 +309,7 @@ name = "payment_filled"
 # Pay 버튼. --dry-run 이면 여기서 멈춤. CVV 가 없으면 누르지 않고 직접 입력 후 누르도록 둠
 [[steps]]
 action = "click"
-selector = 'role=button[name=/^Pay/]'
+selector = 'text=/^\s*Pay\s*:/i >> visible=true'   # "Pay : AED 31.5 /-" (버튼 종류와 무관하게 글자로 찾음)
 final = true
 skip_if_empty = "{card_cvv}"
 

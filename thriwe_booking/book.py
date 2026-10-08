@@ -307,6 +307,13 @@ class Runner:
                 return True
         if step.get('final') and self.dry_run:
             log(f'{label}  -> dry-run 이라 실행하지 않음')
+            # 누르지는 않되, 실제 실행 때 누를 대상이 화면에서 찾아지는지 확인
+            if step.get('selector'):
+                try:
+                    self.page.locator(render(step['selector'], self.vars)).first.wait_for(timeout=5000)
+                    log('  확인: 실제 실행 때 누를 버튼을 찾았습니다')
+                except PlaywrightError:
+                    log('  경고: 실제 실행 때 누를 버튼을 찾지 못했습니다 (selector 확인 필요)')
             return False
         retry_seconds = float(step.get('retry_seconds', 0))
         deadline = time.time() + retry_seconds
