@@ -330,7 +330,7 @@ name = "after_payment"
 # 스크린샷(payment_filled)은 이미 저장됐으므로 결제를 취소해 바로 풀어 둔다.
 [[dry_run_cleanup]]
 action = "click"
-selector = 'role=button[name=/Cancel this Payment/i]'
+selector = 'text=/Cancel this Payment/i >> visible=true'
 optional = true
 
 [[dry_run_cleanup]]

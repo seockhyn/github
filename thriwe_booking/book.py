@@ -337,6 +337,8 @@ class Runner:
         """dry-run 으로 멈추거나 실패한 뒤 정리 (예: 결제 취소 -> 'booking in progress' 로 10분 막히는 것 방지)"""
         if not self.dry_run:
             return
+        # 취소 시 브라우저 확인 창(confirm)이 뜨면 '확인' (기본값은 '취소'라 결제 취소가 안 됨)
+        self.page.once('dialog', lambda dialog: dialog.accept())
         for idx, cleanup in enumerate(self.cfg.get('dry_run_cleanup', []), 1):
             try:
                 self.run_step(f'정리 {idx}', cleanup)
