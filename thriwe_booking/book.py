@@ -220,7 +220,7 @@ class Runner:
 
     def do(self, step, timeout_ms=None):
         action = step['action']
-        timeout = timeout_ms or self.timeout_ms
+        timeout = timeout_ms or step.get('timeout_ms') or self.timeout_ms
         page = self.page
         selector = render(step.get('selector'), self.vars)
         value = render(step.get('value'), self.vars)

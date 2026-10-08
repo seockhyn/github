@@ -81,13 +81,13 @@ action = "click"
 selector = 'role=button[name="Close"]'
 optional = true
 
-# 로그인 후 메인 화면(Golf Access)이 늦게 뜨거나 넘어가지 않을 때가 있음:
-# 20초 기다려도 없으면 대시보드 주소로 직접 이동 (녹화에서 사람이 한 동작과 동일)
+# 로그인 후 메인 화면(Golf Access)이 아주 늦게 뜨거나 넘어가지 않을 때가 있음.
+# 자정 10분 전에 시작하므로 넉넉히 기다리고, 안 뜨면 대시보드 주소로 직접 이동 (최대 2번)
 [[steps]]
 action = "wait_for"
 selector = 'role=heading[name="Golf Access"]'
 optional = true
-attempt_timeout_ms = 20000
+attempt_timeout_ms = 30000
 
 [[steps]]
 action = "goto"
@@ -97,6 +97,18 @@ only_if_missing = 'role=heading[name="Golf Access"] >> visible=true'
 [[steps]]
 action = "wait_for"
 selector = 'role=heading[name="Golf Access"]'
+optional = true
+attempt_timeout_ms = 45000
+
+[[steps]]
+action = "goto"
+url = "https://emiratesnbdbenefits.thriwe.com/dashboard"
+only_if_missing = 'role=heading[name="Golf Access"] >> visible=true'
+
+[[steps]]
+action = "wait_for"
+selector = 'role=heading[name="Golf Access"]'
+timeout_ms = 60000
 
 # ---------- 2. 아부다비 자정까지 대기 ----------
 # 달력의 선택 가능 날짜가 페이지를 연 시점에 정해질 수 있으므로,
