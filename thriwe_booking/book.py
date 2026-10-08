@@ -189,11 +189,15 @@ class Runner:
         until = until.first
         same_page = render(step.get('same_page'), self.vars)
         deadline = time.time() + int(step.get('until_timeout_ms', 15000)) / 1000
+        fail_if = render(step.get('fail_if'), self.vars)
         while True:
             try:
                 until.wait_for(timeout=2000)
                 return
             except PlaywrightError:
+                # fail_if: 사이트 오류 문구가 보이면 다시 누르지 않고 바로 중단
+                if fail_if and self.page.locator(fail_if).first.is_visible():
+                    raise RuntimeError(f'사이트 오류: {self.page.locator(fail_if).first.inner_text().strip()}')
                 if time.time() > deadline:
                     raise
                 # 버튼이 비활성화(처리 중)거나 로딩 화면이 가리고 있으면 다시 누르지 않고 계속 기다림
@@ -325,6 +329,9 @@ class Runner:
     def run(self, steps):
         for idx, step in enumerate(steps, 1):
             if self.run_step(idx, step) is False:
+                # dry-run 으로 멈춘 뒤 정리 (예: 결제 취소 -> 'booking in progress' 로 10분 막히는 것 방지)
+                for c_idx, cleanup in enumerate(self.cfg.get('dry_run_cleanup', []), 1):
+                    self.run_step(f'정리 {c_idx}', cleanup)
                 return False
         return True
 

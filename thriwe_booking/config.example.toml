@@ -252,13 +252,16 @@ same_page = 'role=textbox[name=/Select Time of play/i]'
 action = "screenshot"
 name = "booking_summary"
 
-# 결제 화면(payments.thriwe.com)으로 이동. 이 화면에 그대로 있을 때만 다시 누름
+# 결제 화면(payments.thriwe.com)으로 이동. 이 화면에 그대로 있을 때만 다시 누름.
+# "User already has a booking in progress" 가 뜨면 바로 중단:
+#   직전 실행이 결제 화면에서 Cancel 없이 끝난 경우로, 10분 뒤에 다시 실행해야 함
 [[steps]]
 action = "click"
 selector = 'role=button[name="Proceed To Payment"]'
 until = 'input[placeholder="CVV"]'
 same_page = 'role=button[name="Proceed To Payment"]'
 until_timeout_ms = 30000
+fail_if = 'text=/booking in progress|retry after/i'
 
 # ---------- 7. 카드 정보 입력 (.env 의 CARD_*) ----------
 # 카드번호 앞 6자리 / 뒤 4자리는 미리 채워져 있어 가운데 자리만 입력
@@ -321,3 +324,15 @@ optional = true
 [[steps]]
 action = "screenshot"
 name = "after_payment"
+
+# ---------- dry-run 으로 멈춘 뒤 정리 ----------
+# 결제 화면에서 멈춘 채로 두면 사이트가 10분간 새 예약을 막음("booking in progress").
+# 스크린샷(payment_filled)은 이미 저장됐으므로 결제를 취소해 바로 풀어 둔다.
+[[dry_run_cleanup]]
+action = "click"
+selector = 'role=button[name=/Cancel this Payment/i]'
+optional = true
+
+[[dry_run_cleanup]]
+action = "screenshot"
+name = "payment_cancelled"
