@@ -32,6 +32,7 @@ tee_hour = "08"
 tee_minute = "10"
 tee_ampm = "AM"
 booking_type = "Complimentary"   # 또는 "Discounted"
+region = ""                      # 골프장 화면에서 먼저 고를 지역 (기본 지역이면 비움). 예) "Sharjah"
 
 # 언제 뜰지 모르는 안내 팝업: 클릭하려는 순간 화면을 가리고 있으면 selector 를 눌러 닫음
 [[dismiss]]
@@ -113,27 +114,66 @@ action = "click"
 selector = 'text="{booking_type}"'
 optional = true
 
-# Next 는 화면마다 이름이 같아서, 카드 화면에 그대로 있을 때(same_page)만 다시 누름
+# Next 는 화면마다 이름이 같아서, 카드 화면에 그대로 있을 때(same_page)만 다시 누름.
+# 골프장 화면 판단: 기본 지역 골프장 이름 또는 지역 라디오가 보이면 넘어간 것
 [[steps]]
 action = "click"
 selector = 'role=button[name="Next"]'
-until = 'text=/{course}/i'
+until = ['text=/{course}/i', 'role=radio[name=/^(Abu Dhabi|Dubai|Sharjah|Ras Al Khaimah|Ajman|Fujairah)$/i]']
 same_page = 'text="Select Your Card"'
 
-# 골프장 이름이 적힌 부분을 클릭 (녹화한 동작과 동일)
+# 지역 선택 (region 이 비어 있으면 건너뜀 = 기본 지역). 예) --region Sharjah
 [[steps]]
 action = "click"
-selector = 'span:has-text("{course}")'
+selector = 'text="{region}"'
+skip_if_empty = "{region}"
 retry_seconds = 10
 optional = true
 
-# 라디오 버튼 위를 디자인용 라벨이 덮고 있어 force 로 체크.
-# 이미 선택돼 있으면 그대로 통과하고, 선택이 안 되면 오류가 난다.
+[[steps]]
+action = "check"
+selector = 'role=radio[name="{region}"]'
+force = true
+skip_if_empty = "{region}"
+retry_seconds = 10
+
+# 골프장 선택: 화면에 보이는 골프장 이름 글자를 클릭 (목록이 뜰 때까지 최대 10초)
+[[steps]]
+action = "click"
+selector = 'text=/{course}/i >> visible=true'
+retry_seconds = 10
+optional = true
+
+# 라디오 버튼에 이름이 있는 골프장(아부다비 등)은 이름으로 체크
 [[steps]]
 action = "check"
 selector = 'role=radio[name=/{course}/i]'
 force = true
-retry_seconds = 10
+optional = true
+attempt_timeout_ms = 1000
+unless_checked = ['role=radio[name=/{course}/i]', 'label:has-text("{course}") input[type="radio"]']
+
+# 이름이 없는 라디오(샤르자 등): 골프장 라벨 안쪽 동그라미 클릭 (녹화한 동작과 동일)
+[[steps]]
+action = "click"
+selector = 'label:has-text("{course}") >> label'
+optional = true
+attempt_timeout_ms = 1000
+unless_checked = ['role=radio[name=/{course}/i]', 'label:has-text("{course}") input[type="radio"]']
+
+[[steps]]
+action = "check"
+selector = 'label:has-text("{course}") input[type="radio"]'
+force = true
+optional = true
+attempt_timeout_ms = 1000
+unless_checked = ['role=radio[name=/{course}/i]', 'label:has-text("{course}") input[type="radio"]']
+
+# 원하는 골프장이 실제로 선택됐는지 확인 (안 되면 다른 골프장이 예약되지 않도록 여기서 중단)
+[[steps]]
+action = "assert_checked"
+selectors = ['role=radio[name=/{course}/i]', 'label:has-text("{course}") input[type="radio"]']
+retry_seconds = 5
 
 [[steps]]
 action = "click"
@@ -230,7 +270,7 @@ value = "{card_exp_year}"
 verify = false
 skip_if_empty = "{card_exp_year}"
 
-# CARD_CVV 를 비워 두면 건너뛰고 직접 입력
+# CARD_CVV 를 비워 두면 건너뛰고 직접 입력 (아래 pause 단계에서 기다림)
 [[steps]]
 action = "fill"
 selector = 'input[placeholder="CVV"]'

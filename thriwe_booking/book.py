@@ -181,7 +181,12 @@ class Runner:
         """클릭 후 until 요소가 보일 때까지 기다린다.
         same_page 요소가 아직 보이면(클릭이 무시돼 화면이 그대로면) 다시 클릭한다.
         화면이 이미 바뀌는 중이면 다시 누르지 않는다 (Next 는 화면마다 이름이 같아 화면을 건너뛸 수 있음)."""
-        until = self.page.locator(render(step['until'], self.vars)).first
+        # until 은 하나 또는 목록 (목록이면 그중 하나라도 보이면 다음 화면으로 판단)
+        targets = step['until'] if isinstance(step['until'], list) else [step['until']]
+        until = self.page.locator(render(targets[0], self.vars))
+        for other in targets[1:]:
+            until = until.or_(self.page.locator(render(other, self.vars)))
+        until = until.first
         same_page = render(step.get('same_page'), self.vars)
         deadline = time.time() + int(step.get('until_timeout_ms', 15000)) / 1000
         while True:
@@ -242,6 +247,13 @@ class Runner:
                     log(f'  선택됨: {render(candidate, self.vars)}')
                     return
             raise PlaywrightError('선택 가능한 후보가 없습니다')
+        elif action == 'assert_checked':
+            # 후보 중 하나라도 체크돼 있으면 통과 (예: 원하는 골프장이 실제로 선택됐는지 확인)
+            for candidate in step['selectors']:
+                loc = page.locator(render(candidate, self.vars)).first
+                if loc.count() and loc.is_checked():
+                    return
+            raise PlaywrightError('선택이 확인되지 않았습니다')
         elif action == 'wait_until_open':
             self.wait_until_open(step)
         elif action == 'pause':
@@ -267,8 +279,14 @@ class Runner:
                 return True
         # skip_if_empty: 값이 비어 있으면 건너뜀 (예: CVV 를 .env 에 저장하지 않은 경우 직접 입력)
         if 'skip_if_empty' in step and not render(step['skip_if_empty'], self.vars):
-            log(f'{label}  -> 값이 없어 건너뜀 (직접 입력하세요)')
+            log(f'{label}  -> 값이 없어 건너뜀')
             return True
+        # unless_checked: 후보 중 하나가 이미 체크돼 있으면 건너뜀 (불필요한 대기 방지)
+        for candidate in step.get('unless_checked', []):
+            loc = self.page.locator(render(candidate, self.vars)).first
+            if loc.count() and loc.is_checked():
+                log(f'{label}  -> 이미 선택됨, 건너뜀')
+                return True
         if step.get('final') and self.dry_run:
             log(f'{label}  -> dry-run 이라 실행하지 않음')
             return False
@@ -324,7 +342,8 @@ def main():
     parser.add_argument('--headless', action='store_true')
     parser.add_argument('--tee', help='티타임 지정. 예) 07:30, 14:10, 8:10AM (config 의 tee_* 값 대신 사용)')
     parser.add_argument('--days-ahead', type=int, help='오픈 날짜 기준 며칠 뒤를 예약할지 (config 값 대신 사용)')
-    parser.add_argument('--course', help='골프장 이름 일부. 예) Sharjah (config 의 course 대신 사용)')
+    parser.add_argument('--course', help='골프장 이름 일부. 예) "Sharjah Golf & Shooting Club" (config 의 course 대신 사용)')
+    parser.add_argument('--region', help='골프장 화면에서 먼저 고를 지역 라디오. 예) Sharjah (기본 지역이면 생략)')
     args = parser.parse_args()
 
     load_dotenv(Path(args.env))
@@ -340,6 +359,9 @@ def main():
         cfg.setdefault('vars', {}).update(parse_tee(args.tee))
     if args.course:
         cfg.setdefault('vars', {})['course'] = args.course
+    if args.region is not None:
+        cfg.setdefault('vars', {})['region'] = args.region
+    cfg.setdefault('vars', {}).setdefault('region', '')
     variables = build_vars(cfg, open_at)
 
     missing = [ENV_VARS[k] for k in ('email', 'password') if not variables[k]]
@@ -348,7 +370,8 @@ def main():
 
     offset = 0.0 if args.now else server_clock_offset(cfg['site']['base_url'])
     tee = f'{variables.get("tee_hour", "?")}:{variables.get("tee_minute", "?")} {variables.get("tee_ampm", "")}'
-    log(f'오픈 시각 {open_at.isoformat()} / 골프장 {variables.get("course", "?")} / 예약 날짜 {variables["play_date"]} '
+    region = f'{variables["region"]} / ' if variables.get('region') else ''
+    log(f'오픈 시각 {open_at.isoformat()} / {region}골프장 {variables.get("course", "?")} / 예약 날짜 {variables["play_date"]} '
         f'/ 티타임 {tee} / dry-run={args.dry_run}')
 
     shot_dir = BASE_DIR / 'screenshots'
