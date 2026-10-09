@@ -11,6 +11,8 @@
 import argparse
 import datetime as dt
 import email.utils
+import smtplib
+from email.message import EmailMessage
 import os
 import re
 import sys
@@ -47,8 +49,57 @@ class NoRetryError(RuntimeError):
     """다시 시도해도 소용없거나 위험한 오류 (예: 이미 진행 중인 예약)"""
 
 
+LOG_LINES = []    # 알림 메일에 넣을 로그
+SHOT_PATHS = []   # 이번 실행에서 저장한 스크린샷
+
+
 def log(msg):
-    print(f'[{dt.datetime.now().strftime("%H:%M:%S.%f")[:-3]}] {msg}', flush=True)
+    line = f'[{dt.datetime.now().strftime("%H:%M:%S.%f")[:-3]}] {msg}'
+    LOG_LINES.append(line)
+    print(line, flush=True)
+
+
+def send_notification(subject, body, attachments=()):
+    """.env 의 SMTP_USER / SMTP_PASSWORD / NOTIFY_TO 가 있으면 결과를 메일로 보낸다 (없으면 조용히 건너뜀)."""
+    user, password = os.environ.get('SMTP_USER'), os.environ.get('SMTP_PASSWORD')
+    to = os.environ.get('NOTIFY_TO') or user
+    if not (user and password and to):
+        return False
+    msg = EmailMessage()
+    msg['Subject'], msg['From'], msg['To'] = subject, user, to
+    msg.set_content(body)
+    for path in attachments:
+        try:
+            msg.add_attachment(Path(path).read_bytes(), maintype='image', subtype='png', filename=Path(path).name)
+        except OSError:
+            pass
+    try:
+        host = os.environ.get('SMTP_HOST', 'smtp.gmail.com')
+        with smtplib.SMTP_SSL(host, int(os.environ.get('SMTP_PORT', '465')), timeout=30) as smtp:
+            smtp.login(user, password)
+            smtp.send_message(msg)
+        log(f'알림 메일 발송: {to}')
+        return True
+    except Exception as e:  # noqa: BLE001 - 메일 실패가 예약 결과에 영향 주지 않도록
+        log(f'알림 메일 발송 실패: {e}')
+        return False
+
+
+def acquire_single_instance_lock(path):
+    """같은 PC 에서 두 개가 동시에 돌며 중복 예약하는 것을 막는다 (프로세스가 끝나면 자동 해제)."""
+    handle = open(path, 'a+')
+    try:
+        if os.name == 'nt':
+            import msvcrt
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return None
+    return handle
 
 
 def load_dotenv(path):
@@ -169,6 +220,7 @@ class Runner:
         path = self.shot_dir / f'{dt.datetime.now():%Y%m%d_%H%M%S}_{name}.png'
         try:
             self.page.screenshot(path=str(path), full_page=True)
+            SHOT_PATHS.append(path)
             log(f'스크린샷 저장: {path}')
         except PlaywrightError as e:
             log(f'스크린샷 실패: {e}')
@@ -379,6 +431,24 @@ def add_dismiss_handlers(page, popups, variables):
         page.add_locator_handler(page.locator(target), make_handler(popup.get('name', target)))
 
 
+def report_result(ok, failed, runner, args, variables, tee, done_marker):
+    """예약 결과를 기록하고 알림 메일을 보낸다."""
+    what = f'{variables["play_date"]} {tee} {variables.get("course", "")}'
+    if ok and not args.dry_run:
+        subject = f'[Thriwe 골프] 예약 완료 - {what}'
+        if done_marker:
+            done_marker.write_text(dt.datetime.now().isoformat(), encoding='utf-8')
+    elif not failed:
+        subject = f'[Thriwe 골프] dry-run 완료 - {what}'
+    elif runner.committed:
+        subject = f'[Thriwe 골프] 확인 필요: 결제 단계 이후 오류 - {what}'
+    else:
+        subject = f'[Thriwe 골프] 예약 실패 - {what}'
+    # 카드번호가 보이는 결제 입력 화면은 메일에 첨부하지 않음
+    shots = [p for p in SHOT_PATHS if 'payment_filled' not in p.name][-4:]
+    send_notification(subject, '\n'.join(LOG_LINES[-150:]), shots)
+
+
 def main():
     parser = argparse.ArgumentParser(description='Thriwe 골프 자동 예약')
     parser.add_argument('--config', default=str(BASE_DIR / 'config.toml'))
@@ -393,6 +463,9 @@ def main():
                                            '(작업 스케줄러 없이 자기 전에 미리 실행해 둘 때)')
     parser.add_argument('--open-at', help='오픈 시각을 임의로 지정해 대기까지 테스트. 예) 13:30 (아부다비 시간)')
     parser.add_argument('--retries', type=int, help='실패 시 로그인부터 다시 시도할 횟수 (결제 진행 전 실패만, 기본 2)')
+    parser.add_argument('--play-date', help='예약할 골프 날짜. 예) 2026-10-28 -> 오픈일(15일 전) 자정 5분 전까지 기다렸다가 예약 '
+                                            '(여행 중 등 미리 걸어 둘 때)')
+    parser.add_argument('--test-email', action='store_true', help='알림 메일 설정 확인용 테스트 메일만 보내고 끝냄')
     parser.add_argument('--region', help='골프장 화면에서 먼저 고를 지역 라디오. 예) Sharjah (기본 지역이면 생략)')
     args = parser.parse_args()
 
@@ -402,14 +475,33 @@ def main():
 
     sched = cfg['schedule']
     tz = ZoneInfo(sched.get('timezone', 'Asia/Dubai'))
+
+    if args.test_email:
+        ok = send_notification('[Thriwe 골프] 알림 테스트', '이 메일이 보이면 예약 결과 알림이 정상적으로 옵니다.')
+        sys.exit(0 if ok else 'SMTP_USER / SMTP_PASSWORD / NOTIFY_TO 설정을 확인하세요 (.env)')
     if args.open_at:
         if not re.fullmatch(r'\d{1,2}:\d{2}(:\d{2})?', args.open_at):
             sys.exit(f'--open-at 형식이 잘못됐습니다: {args.open_at} (예: 13:30)')
         sched['open_time'] = args.open_at if args.open_at.count(':') == 2 else args.open_at + ':00'
         sched['late_grace_minutes'] = 0
-    open_at = dt.datetime.now(tz) if args.now else next_open_time(sched)
     if args.days_ahead is not None:
         sched['days_ahead'] = args.days_ahead
+    open_at = dt.datetime.now(tz) if args.now else next_open_time(sched)
+    done_marker = None
+    if args.play_date:
+        # 골프 날짜로부터 오픈 시각 역산: (골프 날짜 - days_ahead) 의 open_time
+        try:
+            play_date = dt.date.fromisoformat(args.play_date)
+        except ValueError:
+            sys.exit(f'--play-date 형식이 잘못됐습니다: {args.play_date} (예: 2026-10-28)')
+        hh, mm, ss = (int(x) for x in sched.get('open_time', '00:00:00').split(':'))
+        open_date = play_date - dt.timedelta(days=int(sched.get('days_ahead', 14)))
+        open_at = dt.datetime(open_date.year, open_date.month, open_date.day, hh, mm, ss, tzinfo=tz)
+        if dt.datetime.now(tz) > open_at + dt.timedelta(minutes=10):
+            sys.exit(f'오픈 시각({open_at:%Y-%m-%d %H:%M})이 이미 지났습니다. 날짜를 확인하세요.')
+        done_marker = BASE_DIR / f'booked_{play_date.isoformat()}.done'
+        if done_marker.exists() and not args.dry_run:
+            sys.exit(f'{play_date} 예약은 이미 완료됐습니다 ({done_marker.name}). 다시 하려면 이 파일을 지우세요.')
     if args.tee:
         cfg.setdefault('vars', {}).update(parse_tee(args.tee))
     if args.course:
@@ -429,7 +521,14 @@ def main():
     log(f'오픈 시각 {open_at.isoformat()} / {region}골프장 {variables.get("course", "?")} / 예약 날짜 {variables["play_date"]} '
         f'/ 티타임 {tee} / dry-run={args.dry_run}')
 
-    if args.start_at:
+    lock = acquire_single_instance_lock(BASE_DIR / 'book.lock')
+    if lock is None:
+        sys.exit('이미 다른 창에서 예약 스크립트가 실행 중입니다 (중복 예약 방지로 종료)')
+
+    start = None
+    if args.play_date and not args.start_at:
+        start = open_at - dt.timedelta(minutes=int(sched.get('start_before_minutes', 5)))
+    elif args.start_at:
         if not re.fullmatch(r'\d{1,2}:\d{2}', args.start_at):
             sys.exit(f'--start-at 형식이 잘못됐습니다: {args.start_at} (예: 23:55)')
         hh, mm = (int(x) for x in args.start_at.split(':'))
@@ -439,10 +538,15 @@ def main():
             start += dt.timedelta(days=1)
         if start > open_at:
             sys.exit(f'--start-at({start:%H:%M})이 오픈 시각({open_at:%m-%d %H:%M})보다 늦습니다')
-        log(f'{start:%m-%d %H:%M} 까지 기다렸다가 시작합니다 (이 창을 닫지 마세요)')
+    if start and start > dt.datetime.now(tz):
+        log(f'{start:%Y-%m-%d %H:%M} (아부다비) 까지 기다렸다가 시작합니다 (이 창을 닫지 마세요)')
         while (remaining := start.timestamp() - time.time()) > 0:
             time.sleep(min(remaining, 30))
         log('시작')
+        if not args.now:
+            # 오래 기다린 뒤에는 PC 시계가 틀어졌을 수 있어 서버 시간 오차를 다시 잰다
+            offset = server_clock_offset(cfg['site']['base_url'])
+            log(f'서버 시간 오차 다시 측정: {offset:+.2f}s')
 
     shot_dir = BASE_DIR / 'screenshots'
     shot_dir.mkdir(exist_ok=True)
@@ -486,6 +590,7 @@ def main():
                     pass
                 continue
             runner.screenshot('final')
+            report_result(ok, failed, runner, args, variables, tee, done_marker)
             try:
                 if browser_cfg.get('keep_open_seconds'):
                     page.wait_for_timeout(int(browser_cfg['keep_open_seconds']) * 1000)
