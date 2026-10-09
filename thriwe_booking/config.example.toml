@@ -141,19 +141,20 @@ selector = 'text="{booking_type}"'
 optional = true
 
 # Next 는 화면마다 이름이 같아서, 카드 화면에 그대로 있을 때(same_page)만 다시 누름.
-# 골프장 화면 판단: 기본 지역 골프장 이름 또는 지역 라디오가 보이면 넘어간 것
+# 골프장 화면 도착 판단: "Select Golf Course" 제목 (자정에는 골프장 목록 자체가 늦게 뜨므로 목록은 아래에서 따로 기다림)
 [[steps]]
 action = "click"
 selector = 'role=button[name="Next"]'
-until = ['text=/{course}/i', 'role=radio[name=/^(Abu Dhabi|Dubai|Sharjah|Ras Al Khaimah|Ajman|Fujairah)$/i]']
+until = ['text="Select Golf Course"', 'text=/{course}/i', 'role=radio[name=/^(Abu Dhabi|Dubai|Sharjah|Ras Al Khaimah|Ajman|Fujairah)$/i]']
 same_page = 'text="Select Your Card"'
+until_timeout_ms = 30000
 
 # 지역 선택 (region 이 비어 있으면 건너뜀 = 기본 지역). 예) --region Sharjah
 [[steps]]
 action = "click"
 selector = 'text="{region}"'
 skip_if_empty = "{region}"
-retry_seconds = 10
+retry_seconds = 45
 optional = true
 
 [[steps]]
@@ -163,11 +164,12 @@ force = true
 skip_if_empty = "{region}"
 retry_seconds = 10
 
-# 골프장 선택: 화면에 보이는 골프장 이름 글자를 클릭 (목록이 뜰 때까지 최대 10초)
+# 골프장 선택: 화면에 보이는 골프장 이름 글자를 클릭.
+# 자정에는 접속이 몰려 골프장 목록이 늦게 뜸(실제로 15초 이상) -> 최대 45초 기다림
 [[steps]]
 action = "click"
 selector = 'text=/{course}/i >> visible=true'
-retry_seconds = 10
+retry_seconds = 45
 optional = true
 
 # 라디오 버튼에 이름이 있는 골프장(아부다비 등)은 이름으로 체크
