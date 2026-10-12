@@ -11,8 +11,6 @@
 import argparse
 import datetime as dt
 import email.utils
-import smtplib
-from email.message import EmailMessage
 import os
 import re
 import sys
@@ -49,40 +47,8 @@ class NoRetryError(RuntimeError):
     """다시 시도해도 소용없거나 위험한 오류 (예: 이미 진행 중인 예약)"""
 
 
-LOG_LINES = []    # 알림 메일에 넣을 로그
-SHOT_PATHS = []   # 이번 실행에서 저장한 스크린샷
-
-
 def log(msg):
-    line = f'[{dt.datetime.now().strftime("%H:%M:%S.%f")[:-3]}] {msg}'
-    LOG_LINES.append(line)
-    print(line, flush=True)
-
-
-def send_notification(subject, body, attachments=()):
-    """.env 의 SMTP_USER / SMTP_PASSWORD / NOTIFY_TO 가 있으면 결과를 메일로 보낸다 (없으면 조용히 건너뜀)."""
-    user, password = os.environ.get('SMTP_USER'), os.environ.get('SMTP_PASSWORD')
-    to = os.environ.get('NOTIFY_TO') or user
-    if not (user and password and to):
-        return False
-    msg = EmailMessage()
-    msg['Subject'], msg['From'], msg['To'] = subject, user, to
-    msg.set_content(body)
-    for path in attachments:
-        try:
-            msg.add_attachment(Path(path).read_bytes(), maintype='image', subtype='png', filename=Path(path).name)
-        except OSError:
-            pass
-    try:
-        host = os.environ.get('SMTP_HOST', 'smtp.gmail.com')
-        with smtplib.SMTP_SSL(host, int(os.environ.get('SMTP_PORT', '465')), timeout=30) as smtp:
-            smtp.login(user, password)
-            smtp.send_message(msg)
-        log(f'알림 메일 발송: {to}')
-        return True
-    except Exception as e:  # noqa: BLE001 - 메일 실패가 예약 결과에 영향 주지 않도록
-        log(f'알림 메일 발송 실패: {e}')
-        return False
+    print(f'[{dt.datetime.now().strftime("%H:%M:%S.%f")[:-3]}] {msg}', flush=True)
 
 
 def acquire_single_instance_lock(path):
@@ -220,7 +186,6 @@ class Runner:
         path = self.shot_dir / f'{dt.datetime.now():%Y%m%d_%H%M%S}_{name}.png'
         try:
             self.page.screenshot(path=str(path), full_page=True)
-            SHOT_PATHS.append(path)
             log(f'스크린샷 저장: {path}')
         except PlaywrightError as e:
             log(f'스크린샷 실패: {e}')
@@ -431,22 +396,11 @@ def add_dismiss_handlers(page, popups, variables):
         page.add_locator_handler(page.locator(target), make_handler(popup.get('name', target)))
 
 
-def report_result(ok, failed, runner, args, variables, tee, done_marker):
-    """예약 결과를 기록하고 알림 메일을 보낸다."""
-    what = f'{variables["play_date"]} {tee} {variables.get("course", "")}'
-    if ok and not args.dry_run:
-        subject = f'[Thriwe 골프] 예약 완료 - {what}'
-        if done_marker:
-            done_marker.write_text(dt.datetime.now().isoformat(), encoding='utf-8')
-    elif not failed:
-        subject = f'[Thriwe 골프] dry-run 완료 - {what}'
-    elif runner.committed:
-        subject = f'[Thriwe 골프] 확인 필요: 결제 단계 이후 오류 - {what}'
-    else:
-        subject = f'[Thriwe 골프] 예약 실패 - {what}'
-    # 카드번호가 보이는 결제 입력 화면은 메일에 첨부하지 않음
-    shots = [p for p in SHOT_PATHS if 'payment_filled' not in p.name][-4:]
-    send_notification(subject, '\n'.join(LOG_LINES[-150:]), shots)
+def mark_done(ok, args, done_marker):
+    """예약 성공을 기록해, 재부팅 등으로 다시 실행돼도 같은 날짜를 또 예약하지 않게 한다."""
+    if ok and not args.dry_run and done_marker:
+        done_marker.write_text(dt.datetime.now().isoformat(), encoding='utf-8')
+        log(f'예약 완료 기록: {done_marker.name}')
 
 
 def main():
@@ -465,7 +419,6 @@ def main():
     parser.add_argument('--retries', type=int, help='실패 시 로그인부터 다시 시도할 횟수 (결제 진행 전 실패만, 기본 2)')
     parser.add_argument('--play-date', help='예약할 골프 날짜. 예) 2026-10-28 -> 오픈일(15일 전) 자정 5분 전까지 기다렸다가 예약 '
                                             '(여행 중 등 미리 걸어 둘 때)')
-    parser.add_argument('--test-email', action='store_true', help='알림 메일 설정 확인용 테스트 메일만 보내고 끝냄')
     parser.add_argument('--region', help='골프장 화면에서 먼저 고를 지역 라디오. 예) Sharjah (기본 지역이면 생략)')
     args = parser.parse_args()
 
@@ -475,10 +428,6 @@ def main():
 
     sched = cfg['schedule']
     tz = ZoneInfo(sched.get('timezone', 'Asia/Dubai'))
-
-    if args.test_email:
-        ok = send_notification('[Thriwe 골프] 알림 테스트', '이 메일이 보이면 예약 결과 알림이 정상적으로 옵니다.')
-        sys.exit(0 if ok else 'SMTP_USER / SMTP_PASSWORD / NOTIFY_TO 설정을 확인하세요 (.env)')
     if args.open_at:
         if not re.fullmatch(r'\d{1,2}:\d{2}(:\d{2})?', args.open_at):
             sys.exit(f'--open-at 형식이 잘못됐습니다: {args.open_at} (예: 13:30)')
@@ -590,7 +539,7 @@ def main():
                     pass
                 continue
             runner.screenshot('final')
-            report_result(ok, failed, runner, args, variables, tee, done_marker)
+            mark_done(ok, args, done_marker)
             try:
                 if browser_cfg.get('keep_open_seconds'):
                     page.wait_for_timeout(int(browser_cfg['keep_open_seconds']) * 1000)
