@@ -214,12 +214,23 @@ same_page = 'text=/{course}/i'
 action = "click"
 selector = ".fa.fa-calendar"
 
-# 예약 날짜가 다음 달이면 달력을 넘김 (막혀 있든 열려 있든 그 날짜가 보이면 건너뜀)
+# 이 사이트 달력은 "다음 달" 버튼 대신 월/연도 선택 상자(Nov ▾ / 2026 ▾)를 씀.
+# 예약 날짜가 보이지 않으면(다른 달이면) 연도 -> 월 순서로 선택 (이미 보이면 건너뜀)
 [[steps]]
-action = "click"
-selector = 'role=button[name="Next Month"]'
+action = "select"
+selector = ':is(.react-datepicker, [class*="datepicker"]) select >> nth=1'
+value = "{play_year}"
 only_if_missing = 'role=option[name=/{play_date_label}/]'
 optional = true
+retry_seconds = 5
+
+[[steps]]
+action = "select"
+selector = ':is(.react-datepicker, [class*="datepicker"]) select >> nth=0'
+value = "{play_month_abbr}"
+only_if_missing = 'role=option[name=/{play_date_label}/]'
+optional = true
+retry_seconds = 5
 
 # 열린 날짜만 이름이 "Choose ..." 로 시작하므로, 열릴 때까지 재시도
 [[steps]]

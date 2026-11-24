@@ -122,6 +122,8 @@ def build_vars(cfg, open_at):
     variables['play_date'] = play_date.strftime(sched.get('date_format', '%Y-%m-%d'))
     variables['play_day'] = str(play_date.day)
     # 달력(react-datepicker)의 날짜 이름 형식: "Thursday, October 22nd, 2026"
+    variables['play_month_abbr'] = play_date.strftime('%b')   # 달력 월 선택 상자: Nov, Dec ...
+    variables['play_year'] = str(play_date.year)
     variables['play_date_label'] = (f'{play_date:%A}, {play_date:%B} {ordinal(play_date.day)}, '
                                     f'{play_date.year}')
     variables.update({k: str(v) for k, v in cfg.get('vars', {}).items()})
