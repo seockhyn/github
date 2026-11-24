@@ -172,8 +172,9 @@ def describe(step, variables):
 
 
 class Runner:
-    def __init__(self, page, cfg, variables, open_at, clock_offset, dry_run, shot_dir):
+    def __init__(self, page, cfg, variables, open_at, clock_offset, dry_run, shot_dir, manual_login=False):
         self.page = page
+        self.manual_login = manual_login
         self.cfg = cfg
         self.vars = variables
         self.open_at = open_at
@@ -192,17 +193,64 @@ class Runner:
         except PlaywrightError as e:
             log(f'스크린샷 실패: {e}')
 
+    # ----- 반자동(--manual-login): 사람이 직접 로그인 -----
+    GOLF_ACCESS = 'role=heading[name="Golf Access"]'
+    LOGIN_BOX = 'role=textbox[name=/Enter your registered email/i]'
+
+    def site_url(self, path):
+        return self.cfg['site']['base_url'].rstrip('/') + path
+
+    def logged_in(self, timeout_ms=20000):
+        try:
+            self.page.locator(self.GOLF_ACCESS).first.wait_for(timeout=timeout_ms)
+            return True
+        except PlaywrightError:
+            return False
+
+    def wait_for_manual_login(self):
+        """이미 로그인돼 있으면 그대로, 아니면 로그인 화면을 열고 사람이 로그인할 때까지 기다린다."""
+        self.page.goto(self.site_url('/dashboard'), wait_until='domcontentloaded')
+        if self.logged_in(8000):
+            log('로그인 상태 확인')
+            return
+        # 사이트가 이미 로그인 화면으로 보냈으면 그대로 둔다 (입력 중인 내용이 지워지지 않게)
+        if not self.page.locator(self.LOGIN_BOX).first.is_visible():
+            self.page.goto(self.site_url('/login'), wait_until='domcontentloaded')
+        log('>>> 열린 브라우저에서 직접 로그인하세요. 메인 화면(Golf Access)이 보이면 자동으로 이어서 진행합니다.')
+        self.page.locator(self.GOLF_ACCESS).first.wait_for(timeout=0)
+        log('로그인 확인')
+
+    def keepalive(self):
+        """대기 중 로그인이 유지되는지 확인 (새로고침). 끊겼으면 다시 로그인을 기다린다."""
+        self.page.reload(wait_until='domcontentloaded')
+        if self.logged_in():
+            log('로그인 유지 확인')
+            return
+        log('!!! 로그인이 풀렸습니다. 다시 로그인해 주세요.')
+        self.wait_for_manual_login()
+
     def wait_until_open(self, step):
         early = float(step.get('early_seconds', 0))
         target = self.open_at.timestamp() - early
         log(f'예약 오픈 대기: {self.open_at.isoformat()} (서버 오차 {self.clock_offset:+.2f}s)')
+        keepalive_sec = float(self.cfg.get('browser', {}).get('keepalive_minutes', 10)) * 60
+        keepalive_stop = float(self.cfg.get('browser', {}).get('keepalive_stop_seconds', 180))
+        next_keepalive = time.time() + keepalive_sec
         while True:
             remaining = target - (time.time() + self.clock_offset)
             if remaining <= 0:
                 break
+            # 반자동: 오픈 3분 전까지는 주기적으로 로그인 유지 확인
+            if self.manual_login and time.time() >= next_keepalive and remaining > keepalive_stop:
+                self.keepalive()
+                next_keepalive = time.time() + keepalive_sec
+                continue
             if remaining > 30:
                 # 대기 중 세션이 끊기지 않도록 주기적으로 페이지를 깨운다
-                self.page.wait_for_timeout(min(remaining - 30, 60) * 1000)
+                chunk = min(remaining - 30, 60)
+                if self.manual_login:
+                    chunk = min(chunk, max(1, next_keepalive - time.time()))
+                self.page.wait_for_timeout(chunk * 1000)
             else:
                 time.sleep(min(remaining, 0.05))
         log('오픈 시각 도달')
@@ -366,7 +414,11 @@ class Runner:
                 raise
 
     def run(self, steps):
+        if self.manual_login:
+            self.wait_for_manual_login()
         for idx, step in enumerate(steps, 1):
+            if self.manual_login and step.get('login'):
+                continue
             if self.run_step(idx, step) is False:
                 self.dry_run_cleanup()
                 return False
@@ -421,6 +473,8 @@ def main():
     parser.add_argument('--retries', type=int, help='실패 시 로그인부터 다시 시도할 횟수 (결제 진행 전 실패만, 기본 2)')
     parser.add_argument('--play-date', help='예약할 골프 날짜. 예) 2026-10-28 -> 오픈일(15일 전) 자정 5분 전까지 기다렸다가 예약 '
                                             '(여행 중 등 미리 걸어 둘 때)')
+    parser.add_argument('--manual-login', action='store_true',
+                        help='반자동: 브라우저를 열어 두고 사람이 직접 로그인하면, 나머지(자정 대기~결제)를 자동 진행')
     parser.add_argument('--region', help='골프장 화면에서 먼저 고를 지역 라디오. 예) Sharjah (기본 지역이면 생략)')
     args = parser.parse_args()
 
@@ -463,7 +517,7 @@ def main():
     variables = build_vars(cfg, open_at)
 
     missing = [ENV_VARS[k] for k in ('email', 'password') if not variables[k]]
-    if missing:
+    if missing and not args.manual_login:
         sys.exit(f'환경변수가 없습니다: {", ".join(missing)} (.env 파일 확인)')
 
     offset = 0.0 if args.now else server_clock_offset(cfg['site']['base_url'])
@@ -477,7 +531,7 @@ def main():
         sys.exit('이미 다른 창에서 예약 스크립트가 실행 중입니다 (중복 예약 방지로 종료)')
 
     start = None
-    if args.play_date and not args.start_at:
+    if args.play_date and not args.start_at and not args.manual_login:
         start = open_at - dt.timedelta(minutes=int(sched.get('start_before_minutes', 5)))
     elif args.start_at:
         if not re.fullmatch(r'\d{1,2}:\d{2}', args.start_at):
@@ -509,18 +563,21 @@ def main():
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=args.headless or browser_cfg.get('headless', False),
                                     channel=browser_cfg.get('channel') or None)
+        context = None
         for attempt in range(retries + 1):
             if attempt:
                 log(f'===== 처음부터 다시 시도 ({attempt}/{retries}) =====')
-            # 시도마다 새 브라우저 세션 (세션 만료/화면 꼬임 등에서 깨끗하게 다시 시작)
-            context = browser.new_context(
-                storage_state=str(state_file) if state_file.exists() and browser_cfg.get('reuse_login') else None,
-                timezone_id=sched.get('timezone', 'Asia/Dubai'),
-                viewport={'width': 1366, 'height': 900},
-            )
+            # 시도마다 새 브라우저 세션 (세션 만료/화면 꼬임 등에서 깨끗하게 다시 시작).
+            # 반자동은 사람이 한 로그인을 유지해야 하므로 세션을 계속 쓰고 새 탭만 연다.
+            if context is None or not args.manual_login:
+                context = browser.new_context(
+                    storage_state=str(state_file) if state_file.exists() and browser_cfg.get('reuse_login') else None,
+                    timezone_id=sched.get('timezone', 'Asia/Dubai'),
+                    viewport={'width': 1366, 'height': 900},
+                )
             page = context.new_page()
             add_dismiss_handlers(page, cfg.get('dismiss', []), variables)
-            runner = Runner(page, cfg, variables, open_at, offset, args.dry_run, shot_dir)
+            runner = Runner(page, cfg, variables, open_at, offset, args.dry_run, shot_dir, args.manual_login)
             ok, failed, retry = False, False, False
             try:
                 ok = runner.run(cfg['steps'])
@@ -536,7 +593,7 @@ def main():
                     log('결제 단계 이후의 실패라 다시 시도하지 않습니다 (예약/결제 상태를 직접 확인하세요)')
             if retry:
                 try:
-                    context.close()
+                    (page if args.manual_login else context).close()
                 except PlaywrightError:
                     pass
                 continue

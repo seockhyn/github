@@ -41,12 +41,15 @@ name = "Meet AINA 안내창"
 selector = 'text=/browse manually instead/i'
 
 # ---------- 1. 로그인 (오픈 10분 전쯤) ----------
+# login = true 단계: --manual-login 으로 실행하면 건너뛰고, 사람이 직접 로그인한 뒤 이어서 진행
 [[steps]]
+login = true                  # --manual-login 이면 이 단계는 건너뛰고 직접 로그인
 action = "goto"
 url = "https://emiratesnbdbenefits.thriwe.com/login"
 wait_until = "networkidle"    # 로그인 화면이 다 그려질 때까지 대기
 
 [[steps]]
+login = true                  # --manual-login 이면 이 단계는 건너뛰고 직접 로그인
 action = "fill"
 selector = 'role=textbox[name=/Enter your registered email/i]'
 value = "{email}"
@@ -54,6 +57,7 @@ press = "Tab"
 retry_seconds = 10
 
 [[steps]]
+login = true                  # --manual-login 이면 이 단계는 건너뛰고 직접 로그인
 action = "fill"
 selector = 'role=textbox[name=/Enter your Password/i]'
 value = "{password}"
@@ -61,23 +65,27 @@ retry_seconds = 10
 
 # Login 직전에 이메일이 그대로 있는지 한 번 더 확인 (지워졌으면 다시 입력)
 [[steps]]
+login = true                  # --manual-login 이면 이 단계는 건너뛰고 직접 로그인
 action = "fill"
 selector = 'role=textbox[name=/Enter your registered email/i]'
 value = "{email}"
 retry_seconds = 10
 
 [[steps]]
+login = true                  # --manual-login 이면 이 단계는 건너뛰고 직접 로그인
 action = "click"
 selector = 'role=button[name="Login"]'
 
 # 로그인 후 안내 팝업 (안 뜰 수도 있으므로 optional). 로그인 응답이 늦을 수 있어 넉넉히 기다림
 [[steps]]
+login = true                  # --manual-login 이면 이 단계는 건너뛰고 직접 로그인
 action = "click"
 selector = 'role=button[name="Click to proceed"]'
 optional = true
 attempt_timeout_ms = 15000
 
 [[steps]]
+login = true                  # --manual-login 이면 이 단계는 건너뛰고 직접 로그인
 action = "click"
 selector = 'role=button[name="Close"]'
 optional = true
@@ -85,28 +93,33 @@ optional = true
 # 로그인 후 메인 화면(Golf Access)이 아주 늦게 뜨거나 넘어가지 않을 때가 있음.
 # 자정 10분 전에 시작하므로 넉넉히 기다리고, 안 뜨면 대시보드 주소로 직접 이동 (최대 2번)
 [[steps]]
+login = true                  # --manual-login 이면 이 단계는 건너뛰고 직접 로그인
 action = "wait_for"
 selector = 'role=heading[name="Golf Access"]'
 optional = true
 attempt_timeout_ms = 30000
 
 [[steps]]
+login = true                  # --manual-login 이면 이 단계는 건너뛰고 직접 로그인
 action = "goto"
 url = "https://emiratesnbdbenefits.thriwe.com/dashboard"
 only_if_missing = 'role=heading[name="Golf Access"] >> visible=true'
 
 [[steps]]
+login = true                  # --manual-login 이면 이 단계는 건너뛰고 직접 로그인
 action = "wait_for"
 selector = 'role=heading[name="Golf Access"]'
 optional = true
 attempt_timeout_ms = 45000
 
 [[steps]]
+login = true                  # --manual-login 이면 이 단계는 건너뛰고 직접 로그인
 action = "goto"
 url = "https://emiratesnbdbenefits.thriwe.com/dashboard"
 only_if_missing = 'role=heading[name="Golf Access"] >> visible=true'
 
 [[steps]]
+login = true                  # --manual-login 이면 이 단계는 건너뛰고 직접 로그인
 action = "wait_for"
 selector = 'role=heading[name="Golf Access"]'
 timeout_ms = 60000
